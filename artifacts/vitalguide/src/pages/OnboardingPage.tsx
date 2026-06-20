@@ -15,7 +15,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
   HeartPulse, ArrowRight, ArrowLeft, Upload, FileText, Loader2,
-  CheckCircle2, SkipForward, Mail,
+  CheckCircle2, Mail,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -150,10 +150,6 @@ export default function OnboardingPage() {
       return;
     }
     saveProfile(data, docResult?.extractedData ?? undefined);
-  };
-
-  const handleSkipAndFinish = () => {
-    saveProfile(form.getValues(), docResult?.extractedData ?? undefined);
   };
 
   const handleDocUpload = async (file: File) => {
@@ -470,18 +466,6 @@ export default function OnboardingPage() {
                   ) : <div />}
 
                   <div className="flex items-center gap-2">
-                    {step === 4 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={handleSkipAndFinish}
-                        disabled={upsertProfile.isPending}
-                        className="text-slate-400 hover:text-slate-600 gap-1 text-sm"
-                      >
-                        <SkipForward className="w-3.5 h-3.5" />
-                        {docResult ? "Finish" : "Skip for now"}
-                      </Button>
-                    )}
                     {step < 4 && (
                       <Button
                         type="submit"
@@ -491,7 +475,7 @@ export default function OnboardingPage() {
                         Next Step <ArrowRight className="w-4 h-4 ml-2" />
                       </Button>
                     )}
-                    {step === 4 && docResult && (
+                    {step === 4 && (
                       <Button
                         type="submit"
                         className="bg-teal-600 hover:bg-teal-700 text-white shadow-sm px-6"
