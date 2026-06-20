@@ -14,6 +14,8 @@ export interface UserProfile {
   /** @nullable */
   gender?: string | null;
   /** @nullable */
+  bloodGroup?: string | null;
+  /** @nullable */
   weight?: number | null;
   /** @nullable */
   height?: number | null;
@@ -31,5 +33,7 @@ export interface UserProfile {
   goals?: string | null;
   /** @nullable */
   location?: string | null;
+  /** @nullable */
+  additionalDetails?: string | null;
   createdAt?: string;
 }

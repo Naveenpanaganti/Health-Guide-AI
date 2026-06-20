@@ -47,6 +47,21 @@ Key rules:
 - Always personalize answers to the user's profile when available`,
 };
 
+router.delete("/conversations/:id", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  try {
+    await db.delete(messages).where(eq(messages.conversationId, id));
+    await db.delete(conversations).where(and(eq(conversations.id, id), eq(conversations.clerkUserId, userId)));
+    return res.status(204).send();
+  } catch (err) {
+    logger.error({ err }, "Failed to delete conversation");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/conversations", async (req, res) => {
   const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });

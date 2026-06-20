@@ -8,6 +8,7 @@ export const userProfilesTable = pgTable("user_profiles", {
   name: text("name").notNull(),
   age: integer("age").notNull(),
   gender: text("gender"),
+  bloodGroup: text("blood_group"),
   weight: real("weight"),
   height: real("height"),
   medicalConditions: text("medical_conditions"),
@@ -17,6 +18,7 @@ export const userProfilesTable = pgTable("user_profiles", {
   activityLevel: text("activity_level"),
   goals: text("goals"),
   location: text("location"),
+  additionalDetails: text("additional_details"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

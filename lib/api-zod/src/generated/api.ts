@@ -25,6 +25,7 @@ export const GetProfileResponse = zod.object({
   "name": zod.string(),
   "age": zod.number(),
   "gender": zod.string().nullish(),
+  "bloodGroup": zod.string().nullish(),
   "weight": zod.number().nullish(),
   "height": zod.number().nullish(),
   "medicalConditions": zod.string().nullish(),
@@ -34,6 +35,7 @@ export const GetProfileResponse = zod.object({
   "activityLevel": zod.string().nullish(),
   "goals": zod.string().nullish(),
   "location": zod.string().nullish(),
+  "additionalDetails": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -45,6 +47,7 @@ export const UpsertProfileBody = zod.object({
   "name": zod.string(),
   "age": zod.number(),
   "gender": zod.string().optional(),
+  "bloodGroup": zod.string().optional(),
   "weight": zod.number().optional(),
   "height": zod.number().optional(),
   "medicalConditions": zod.string().optional(),
@@ -53,7 +56,8 @@ export const UpsertProfileBody = zod.object({
   "sleepHours": zod.number().optional(),
   "activityLevel": zod.string().optional(),
   "goals": zod.string().optional(),
-  "location": zod.string().optional()
+  "location": zod.string().optional(),
+  "additionalDetails": zod.string().optional()
 })
 
 export const UpsertProfileResponse = zod.object({
@@ -62,6 +66,7 @@ export const UpsertProfileResponse = zod.object({
   "name": zod.string(),
   "age": zod.number(),
   "gender": zod.string().nullish(),
+  "bloodGroup": zod.string().nullish(),
   "weight": zod.number().nullish(),
   "height": zod.number().nullish(),
   "medicalConditions": zod.string().nullish(),
@@ -71,6 +76,7 @@ export const UpsertProfileResponse = zod.object({
   "activityLevel": zod.string().nullish(),
   "goals": zod.string().nullish(),
   "location": zod.string().nullish(),
+  "additionalDetails": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 

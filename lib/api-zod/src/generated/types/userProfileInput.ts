@@ -10,6 +10,7 @@ export interface UserProfileInput {
   name: string;
   age: number;
   gender?: string;
+  bloodGroup?: string;
   weight?: number;
   height?: number;
   medicalConditions?: string;
@@ -19,4 +20,5 @@ export interface UserProfileInput {
   activityLevel?: string;
   goals?: string;
   location?: string;
+  additionalDetails?: string;
 }

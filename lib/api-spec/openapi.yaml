@@ -367,6 +367,8 @@ components:
           type: integer
         gender:
           type: ["string", "null"]
+        bloodGroup:
+          type: ["string", "null"]
         weight:
           type: ["number", "null"]
         height:
@@ -384,6 +386,8 @@ components:
         goals:
           type: ["string", "null"]
         location:
+          type: ["string", "null"]
+        additionalDetails:
           type: ["string", "null"]
         createdAt:
           type: string
@@ -398,6 +402,8 @@ components:
           type: integer
         gender:
           type: string
+        bloodGroup:
+          type: string
         weight:
           type: number
         height:
@@ -415,6 +421,8 @@ components:
         goals:
           type: string
         location:
+          type: string
+        additionalDetails:
           type: string
 
     Plan:

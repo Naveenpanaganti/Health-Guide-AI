@@ -17,6 +17,8 @@ export interface UserProfile {
   /** @nullable */
   gender?: string | null;
   /** @nullable */
+  bloodGroup?: string | null;
+  /** @nullable */
   weight?: number | null;
   /** @nullable */
   height?: number | null;
@@ -34,6 +36,8 @@ export interface UserProfile {
   goals?: string | null;
   /** @nullable */
   location?: string | null;
+  /** @nullable */
+  additionalDetails?: string | null;
   createdAt?: string;
 }
 
@@ -41,6 +45,7 @@ export interface UserProfileInput {
   name: string;
   age: number;
   gender?: string;
+  bloodGroup?: string;
   weight?: number;
   height?: number;
   medicalConditions?: string;
@@ -50,6 +55,7 @@ export interface UserProfileInput {
   activityLevel?: string;
   goals?: string;
   location?: string;
+  additionalDetails?: string;
 }
 
 export interface Plan {
