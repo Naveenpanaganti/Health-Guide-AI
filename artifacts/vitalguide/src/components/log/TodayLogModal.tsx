@@ -1,12 +1,181 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Moon, Sun, Sunrise, Sunset, Utensils, Candy, Plus, X, CheckCircle2, Clock, Droplets, Bot, Save } from "lucide-react";
+import { Moon, Sun, Sunrise, Sunset, Utensils, Candy, Plus, X, CheckCircle2, Clock, Droplets, Bot, Save, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+
+// ── Time Picker ────────────────────────────────────────────────────────────────
+function to24(h: number, m: number, ampm: "AM" | "PM") {
+  let h24 = h % 12;
+  if (ampm === "PM") h24 += 12;
+  return `${String(h24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function from24(value: string): { h: number; m: number; ampm: "AM" | "PM" } | null {
+  if (!value) return null;
+  const [hStr, mStr] = value.split(":");
+  const h24 = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (isNaN(h24) || isNaN(m)) return null;
+  const ampm: "AM" | "PM" = h24 < 12 ? "AM" : "PM";
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return { h, m, ampm };
+}
+
+function formatDisplay(value: string): string {
+  const parsed = from24(value);
+  if (!parsed) return "";
+  const { h, m, ampm } = parsed;
+  return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+const SLEEP_PRESETS = ["8:00 PM", "9:00 PM", "9:30 PM", "10:00 PM", "10:30 PM", "11:00 PM", "11:30 PM", "12:00 AM", "1:00 AM"];
+const WAKE_PRESETS  = ["4:30 AM", "5:00 AM", "5:30 AM", "6:00 AM", "6:30 AM", "7:00 AM", "7:30 AM", "8:00 AM", "9:00 AM", "10:00 AM"];
+
+function parsePreset(preset: string): string {
+  const [time, period] = preset.split(" ");
+  const [hStr, mStr] = time.split(":");
+  return to24(parseInt(hStr), parseInt(mStr), period as "AM" | "PM");
+}
+
+type TimePickerProps = {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  presets: string[];
+  error?: boolean;
+  icon?: React.ReactNode;
+};
+
+function TimePicker({ label, value, onChange, presets, error, icon }: TimePickerProps) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const display = formatDisplay(value);
+  const parsed = from24(value);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setTextMode(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handlePreset = (preset: string) => {
+    onChange(parsePreset(preset));
+    setOpen(false);
+  };
+
+  const handleNativeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onChange(e.target.value);
+  };
+
+  const toggleAmPm = () => {
+    if (!parsed) return;
+    const newAmPm: "AM" | "PM" = parsed.ampm === "AM" ? "PM" : "AM";
+    onChange(to24(parsed.h, parsed.m, newAmPm));
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <label className="text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5 block">
+        {icon}{label}
+      </label>
+
+      {/* Main trigger button */}
+      <button
+        type="button"
+        onClick={() => { setOpen(p => !p); setTextMode(false); }}
+        className={cn(
+          "w-full h-10 px-3 flex items-center justify-between rounded-lg border bg-slate-50 text-sm transition-all",
+          "hover:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-300 focus:ring-offset-1",
+          error ? "border-red-400" : "border-slate-200",
+          open && "border-teal-400 ring-2 ring-teal-200"
+        )}
+      >
+        <span className={display ? "text-slate-800 font-medium" : "text-slate-400"}>
+          {display || "Select time"}
+        </span>
+        <div className="flex items-center gap-1.5">
+          {value && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onChange(""); }}
+              className="w-4 h-4 rounded-full bg-slate-200 hover:bg-red-100 hover:text-red-500 flex items-center justify-center text-slate-400 transition-colors"
+            >
+              <X className="w-2.5 h-2.5" />
+            </button>
+          )}
+          <ChevronDown className={cn("w-3.5 h-3.5 text-slate-400 transition-transform", open && "rotate-180")} />
+        </div>
+      </button>
+
+      {/* Dropdown panel */}
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1.5 w-72 bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
+          {/* Native time input row */}
+          <div className="px-3 pt-3 pb-2 border-b border-slate-100">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Enter time</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="time"
+                value={value}
+                onChange={handleNativeChange}
+                className="flex-1 h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-300"
+              />
+              {parsed && (
+                <button
+                  type="button"
+                  onClick={toggleAmPm}
+                  className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-bold text-teal-700 hover:bg-teal-50 hover:border-teal-300 transition-colors"
+                >
+                  {parsed.ampm}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Quick presets */}
+          <div className="p-3">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Quick select</p>
+            <div className="flex flex-wrap gap-1.5">
+              {presets.map(preset => {
+                const val = parsePreset(preset);
+                const active = val === value;
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => handlePreset(preset)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-full text-xs font-medium border transition-all",
+                      active
+                        ? "bg-teal-600 text-white border-teal-600 shadow-sm"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50"
+                    )}
+                  >
+                    {preset}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ──────────────────────────────────────────────────────────────────────────────
 
 export type DailyLog = {
   id?: number;
@@ -256,14 +425,22 @@ export default function TodayLogModal({ open, onOpenChange, date, initialLog, on
           <section>
             <SectionLabel icon={<Moon size={14} />} title={<span>Sleep <span className="text-red-500 ml-0.5">*</span></span>} subtitle="When did you sleep and wake up?" />
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-medium text-slate-600 mb-1.5 block">Slept at</label>
-                <Input type="time" value={sleepAt} onChange={e => { setSleepAt(e.target.value); setErrors(p => ({ ...p, sleep: undefined })); }} className={cn("h-10 bg-slate-50", errors.sleep && "border-red-400 focus-visible:ring-red-300")} />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600 mb-1.5 block">Woke at</label>
-                <Input type="time" value={wokeAt} onChange={e => { setWokeAt(e.target.value); setErrors(p => ({ ...p, sleep: undefined })); }} className={cn("h-10 bg-slate-50", errors.sleep && "border-red-400 focus-visible:ring-red-300")} />
-              </div>
+              <TimePicker
+                label="Slept at"
+                value={sleepAt}
+                onChange={v => { setSleepAt(v); setErrors(p => ({ ...p, sleep: undefined })); }}
+                presets={SLEEP_PRESETS}
+                error={!!errors.sleep}
+                icon={<Moon size={11} className="text-indigo-400" />}
+              />
+              <TimePicker
+                label="Woke at"
+                value={wokeAt}
+                onChange={v => { setWokeAt(v); setErrors(p => ({ ...p, sleep: undefined })); }}
+                presets={WAKE_PRESETS}
+                error={!!errors.sleep}
+                icon={<Sun size={11} className="text-amber-400" />}
+              />
             </div>
             {errors.sleep && <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">⚠ {errors.sleep}</p>}
             {sleepHours !== null && (
