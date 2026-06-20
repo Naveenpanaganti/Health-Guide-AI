@@ -8,9 +8,16 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY environment variable is not set.");
+    }
+    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openai;
+}
 
 const SYSTEM_PROMPTS: Record<string, string> = {
   checkup: `You are VitalGuide AI, a compassionate and knowledgeable health assistant. You help users understand their symptoms and suggest safe, evidence-based actions.
@@ -137,7 +144,7 @@ router.post("/conversations/:id/messages", async (req, res): Promise<void> => {
     res.setHeader("Connection", "keep-alive");
 
     let fullResponse = "";
-    const stream = await openai.chat.completions.create({
+    const stream = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       max_tokens: 1024,
       messages: chatMessages,

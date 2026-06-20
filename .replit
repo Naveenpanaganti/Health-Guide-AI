@@ -11,6 +11,11 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Project"
 
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
