@@ -3,20 +3,21 @@ import { getAuth } from "@clerk/express";
 import { db, conversations, messages, userProfilesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { CreateConversationBody, SendMessageBody, GetConversationMessagesParams } from "@workspace/api-zod";
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 import { logger } from "../lib/logger";
 
 const router = Router();
 
-let _openai: OpenAI | null = null;
-function getOpenAI(): OpenAI {
-  if (!_openai) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY environment variable is not set.");
+let _ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!_ai) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("No Gemini API key configured. Please add GEMINI_API_KEY to your secrets.");
     }
-    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    _ai = new GoogleGenAI({ apiKey });
   }
-  return _openai;
+  return _ai;
 }
 
 const SYSTEM_PROMPTS: Record<string, string> = {
@@ -134,28 +135,31 @@ router.post("/conversations/:id/messages", async (req, res): Promise<void> => {
       systemPrompt += `\n\nUser profile: Name: ${profile.name}, Age: ${profile.age}, Gender: ${profile.gender ?? "unspecified"}, Weight: ${profile.weight ?? "unknown"}kg, Height: ${profile.height ?? "unknown"}cm, Medical conditions: ${profile.medicalConditions ?? "none"}, Medications: ${profile.medications ?? "none"}, Allergies: ${profile.allergies ?? "none"}, Sleep: ${profile.sleepHours ?? "unknown"}h/night, Activity level: ${profile.activityLevel ?? "unknown"}, Goals: ${profile.goals ?? "none"}, Location: ${profile.location ?? "unknown"}.`;
     }
 
-    const chatMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: "system", content: systemPrompt },
-      ...historyRows.slice(-20).map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-    ];
+    const chatContents = historyRows.slice(-20).map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
     let fullResponse = "";
-    const stream = await getOpenAI().chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 1024,
-      messages: chatMessages,
-      stream: true,
+
+    const stream = await getAI().models.generateContentStream({
+      model: "gemini-2.5-flash",
+      contents: chatContents,
+      config: {
+        systemInstruction: systemPrompt,
+        maxOutputTokens: 8192,
+      },
     });
 
     for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
-      if (content) {
-        fullResponse += content;
-        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      const text = chunk.text;
+      if (text) {
+        fullResponse += text;
+        res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
       }
     }
 
@@ -163,13 +167,27 @@ router.post("/conversations/:id/messages", async (req, res): Promise<void> => {
 
     res.write("data: [DONE]\n\n");
     res.end();
-  } catch (err) {
+  } catch (err: any) {
     logger.error({ err }, "Failed to send message");
+
+    let userMessage = "Something went wrong. Please try again.";
+    const msg: string = err?.message ?? "";
+
+    if (msg.includes("API_KEY_INVALID") || msg.includes("invalid api key") || msg.toLowerCase().includes("api key not valid")) {
+      userMessage = "Invalid Gemini API key. Please check your GEMINI_API_KEY secret.";
+    } else if (msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota") || msg.includes("429")) {
+      userMessage = "Gemini API quota exceeded. Please check your Google AI billing or wait before retrying.";
+    } else if (msg.includes("PERMISSION_DENIED")) {
+      userMessage = "Gemini API key does not have permission. Ensure the Gemini API is enabled in your Google Cloud project.";
+    } else if (msg.includes("GEMINI_API_KEY environment variable is not set")) {
+      userMessage = "No Gemini API key configured. Please add GEMINI_API_KEY to your secrets.";
+    }
+
     if (!res.headersSent) {
-      res.status(500).json({ error: "Internal server error" });
+      res.status(500).json({ error: userMessage });
       return;
     }
-    res.write(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`);
+    res.write(`data: ${JSON.stringify({ error: userMessage })}\n\n`);
     res.end();
   }
 });

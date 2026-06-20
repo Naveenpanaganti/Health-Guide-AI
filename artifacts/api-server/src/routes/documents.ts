@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import multer from "multer";
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 import { db, medicalDocumentsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -9,12 +9,14 @@ import { logger } from "../lib/logger";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-let _openai: OpenAI | null = null;
-function getOpenAI(): OpenAI {
-  if (!_openai) {
-    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!_ai) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("No Gemini API key configured.");
+    _ai = new GoogleGenAI({ apiKey });
   }
-  return _openai;
+  return _ai;
 }
 
 const EXTRACT_PROMPT = `You are a medical document analyst. Extract all medical information from this document image and return a structured JSON object.
@@ -53,25 +55,26 @@ router.post("/upload", upload.single("document"), async (req, res): Promise<void
     let summary = "";
 
     try {
-      const response = await getOpenAI().chat.completions.create({
-        model: "gpt-4o-mini",
-        max_tokens: 1500,
-        messages: [
+      const response = await getAI().models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
           {
             role: "user",
-            content: [
-              { type: "text", text: EXTRACT_PROMPT },
-              { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+            parts: [
+              { text: EXTRACT_PROMPT },
+              { inlineData: { mimeType: mimetype, data: base64 } },
             ],
           },
         ],
+        config: { maxOutputTokens: 8192 },
       });
 
-      const raw = response.choices[0]?.message?.content ?? "{}";
-      extractedData = JSON.parse(raw);
+      const raw = response.text ?? "{}";
+      const jsonStr = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      extractedData = JSON.parse(jsonStr);
       summary = (extractedData.summary as string) ?? "";
     } catch (aiErr) {
-      logger.warn({ aiErr }, "OpenAI extraction failed — saving document without data");
+      logger.warn({ aiErr }, "Gemini extraction failed — saving document without data");
       extractedData = {};
       summary = "AI extraction unavailable. Document saved.";
     }

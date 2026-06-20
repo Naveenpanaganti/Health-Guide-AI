@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, AlertTriangle } from "lucide-react";
+import { Send, Bot, User, AlertTriangle, WifiOff, KeyRound, Gauge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,10 +13,83 @@ interface ChatInterfaceProps {
   mode: "checkup" | "planner" | "education";
 }
 
+type ChatError =
+  | { kind: "quota"; message: string }
+  | { kind: "invalid_key"; message: string }
+  | { kind: "permission"; message: string }
+  | { kind: "no_key"; message: string }
+  | { kind: "generic"; message: string };
+
+function parseChatError(msg: string): ChatError {
+  const lower = msg.toLowerCase();
+  if (lower.includes("quota") || lower.includes("exhausted") || lower.includes("billing")) {
+    return { kind: "quota", message: msg };
+  }
+  if (lower.includes("invalid") && lower.includes("key")) {
+    return { kind: "invalid_key", message: msg };
+  }
+  if (lower.includes("permission")) {
+    return { kind: "permission", message: msg };
+  }
+  if (lower.includes("no gemini api key") || lower.includes("gemini_api_key")) {
+    return { kind: "no_key", message: msg };
+  }
+  return { kind: "generic", message: msg };
+}
+
+function ErrorBanner({ error, onDismiss }: { error: ChatError; onDismiss: () => void }) {
+  const configs: Record<ChatError["kind"], { icon: React.ReactNode; title: string; body: string; color: string }> = {
+    quota: {
+      icon: <Gauge className="h-4 w-4" />,
+      title: "API Quota Exceeded",
+      body: "Your Gemini API quota has been used up. Please check your Google AI billing or wait for the quota to reset.",
+      color: "border-orange-200 bg-orange-50 text-orange-800",
+    },
+    invalid_key: {
+      icon: <KeyRound className="h-4 w-4" />,
+      title: "Invalid API Key",
+      body: "Your Gemini API key is invalid. Please update the GEMINI_API_KEY secret with a valid key.",
+      color: "border-red-200 bg-red-50 text-red-800",
+    },
+    permission: {
+      icon: <KeyRound className="h-4 w-4" />,
+      title: "API Permission Denied",
+      body: "Your API key doesn't have permission. Make sure the Gemini API is enabled in your Google Cloud project.",
+      color: "border-red-200 bg-red-50 text-red-800",
+    },
+    no_key: {
+      icon: <KeyRound className="h-4 w-4" />,
+      title: "API Key Not Configured",
+      body: "No Gemini API key found. Please add your key as GEMINI_API_KEY in Replit Secrets.",
+      color: "border-yellow-200 bg-yellow-50 text-yellow-800",
+    },
+    generic: {
+      icon: <WifiOff className="h-4 w-4" />,
+      title: "AI Unavailable",
+      body: error.message || "The AI assistant encountered an error. Please try again.",
+      color: "border-slate-200 bg-slate-50 text-slate-800",
+    },
+  };
+
+  const cfg = configs[error.kind];
+
+  return (
+    <div className={`mx-4 mt-3 rounded-lg border p-3 flex gap-2.5 items-start ${cfg.color}`}>
+      <span className="mt-0.5 flex-shrink-0">{cfg.icon}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold leading-tight">{cfg.title}</p>
+        <p className="text-xs mt-0.5 leading-snug opacity-80">{cfg.body}</p>
+      </div>
+      <button onClick={onDismiss} className="text-xs opacity-50 hover:opacity-100 flex-shrink-0 ml-1 mt-0.5">✕</button>
+    </div>
+  );
+}
+
 export default function ChatInterface({ conversationId, initialMessages = [], mode }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [chatError, setChatError] = useState<ChatError | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +102,7 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
   }, [messages, isStreaming]);
 
   const hasEmergency = messages.some(m => m.role === "assistant" && (
-    m.content.toLowerCase().includes("emergency") || 
+    m.content.toLowerCase().includes("emergency") ||
     m.content.toLowerCase().includes("911") ||
     m.content.toLowerCase().includes("urgent medical")
   ));
@@ -54,13 +127,15 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
 
+    setChatError(null);
+
     const userMessage: Message = {
       id: Date.now(),
       role: "user",
       content: input,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
-    
+
     const contentToSend = input;
     setInput("");
     setMessages(prev => [...prev, userMessage]);
@@ -76,18 +151,27 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
         credentials: "include",
         body: JSON.stringify({ content: contentToSend }),
       });
-      
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
+        const parsed = parseChatError(errBody.error ?? `Request failed with status ${res.status}`);
+        setChatError(parsed);
+        setMessages(prev => prev.filter(m => m.id !== assistantMessageId));
+        return;
+      }
+
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      
+      let receivedContent = false;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        
+
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             const raw = line.slice(6).trim();
@@ -98,10 +182,17 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
             }
             try {
               const parsed = JSON.parse(raw);
+              if (parsed.error) {
+                const chatErr = parseChatError(parsed.error);
+                setChatError(chatErr);
+                setMessages(prev => prev.filter(m => m.id !== assistantMessageId || receivedContent));
+                return;
+              }
               if (parsed.content) {
-                setMessages(prev => prev.map(m => 
-                  m.id === assistantMessageId 
-                    ? { ...m, content: m.content + parsed.content } 
+                receivedContent = true;
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantMessageId
+                    ? { ...m, content: m.content + parsed.content }
                     : m
                 ));
               }
@@ -109,8 +200,10 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
           }
         }
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      const parsed = parseChatError(err?.message ?? "Network error. Please check your connection.");
+      setChatError(parsed);
+      setMessages(prev => prev.filter(m => m.id !== assistantMessageId));
     } finally {
       setIsStreaming(false);
       queryClient.invalidateQueries({ queryKey: getGetConversationMessagesQueryKey(conversationId) });
@@ -128,7 +221,11 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
           </AlertDescription>
         </Alert>
       )}
-      
+
+      {chatError && (
+        <ErrorBanner error={chatError} onDismiss={() => setChatError(null)} />
+      )}
+
       <ScrollArea className="flex-1 p-4 md:p-6" ref={scrollRef}>
         <div className="space-y-6">
           {messages.length === 0 && (
@@ -140,18 +237,28 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
               <p className="mt-1 max-w-xs text-sm">Send a message to start the conversation.</p>
             </div>
           )}
-          
+
           {messages.map((msg) => (
             <div key={msg.id} className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${getIconColors(msg.role)}`}>
                 {msg.role === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
               </div>
               <div className={`max-w-[85%] rounded-2xl px-5 py-3.5 text-[15px] leading-relaxed shadow-sm ${
-                msg.role === "user" 
-                  ? "bg-teal-600 text-white rounded-tr-sm" 
+                msg.role === "user"
+                  ? "bg-teal-600 text-white rounded-tr-sm"
                   : `${getRoleColors(msg.role)} rounded-tl-sm`
               }`}>
-                <div className="whitespace-pre-wrap font-sans break-words">{msg.content}</div>
+                {msg.content ? (
+                  <div className="whitespace-pre-wrap font-sans break-words">{msg.content}</div>
+                ) : (
+                  isStreaming && (
+                    <div className="flex gap-1 items-center py-1">
+                      <span className="w-2 h-2 rounded-full bg-current opacity-40 animate-bounce [animation-delay:0ms]" />
+                      <span className="w-2 h-2 rounded-full bg-current opacity-40 animate-bounce [animation-delay:150ms]" />
+                      <span className="w-2 h-2 rounded-full bg-current opacity-40 animate-bounce [animation-delay:300ms]" />
+                    </div>
+                  )
+                )}
               </div>
             </div>
           ))}
@@ -161,16 +268,16 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
 
       <div className="p-4 border-t border-slate-100 bg-slate-50/80">
         <form onSubmit={sendMessage} className="flex gap-3 max-w-4xl mx-auto">
-          <Input 
+          <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
             className="flex-1 bg-white border-slate-200 shadow-sm h-12 text-base rounded-full px-5 focus-visible:ring-teal-600"
             disabled={isStreaming}
           />
-          <Button 
-            type="submit" 
-            disabled={!input.trim() || isStreaming} 
+          <Button
+            type="submit"
+            disabled={!input.trim() || isStreaming}
             className="h-12 w-12 rounded-full p-0 flex-shrink-0 bg-teal-600 hover:bg-teal-700 text-white shadow-sm"
           >
             <Send className="w-5 h-5 ml-1" />
