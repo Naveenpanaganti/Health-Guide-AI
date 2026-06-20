@@ -1,0 +1,3 @@
+- [Replit artifact workflow conflict](artifact-workflow-conflict.md) — `artifacts/api-server: API Server` owns port 8080; `Backend API` custom workflow conflicts and must not be restarted.
+- [Separator component missing](shadcn-separator.md) — shadcn Separator is NOT installed; use `<div className="border-t border-slate-100" />` instead.
+- [Today's Log schema](todays-log-schema.md) — `daily_logs` table extended with sleep, body-check, food-by-meal, junk intake, isCompleted, customSections fields (pushed June 2026).

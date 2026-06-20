@@ -1,0 +1,61 @@
+Most importantly, I want another page or a pop‑up card when Today's Log is clicked.
+
+The Today's Log should be the most visible element on the dashboard and always ordered first at the top.
+
+Health checkups are not daily, but the Today's Log is.
+
+It must be available in such a way that the user can click on it and immediately enter details.
+
+Until the end of the day, if the user has not filled in the necessary details, the log should remain marked as In Progress. Once completed, it should be marked as Completed.
+
+Plan Tracker Integration
+
+The plan tracker should also contain the Today's Log and show its status (e.g., Daily Check‑in: In Progress until midnight).
+
+At exactly 12:00 AM, a new day starts and the previous day closes.
+
+If the user forgets to enter details for the previous day, there should be an option at the top of the plan tracker to select days or calendar dates.
+
+Clicking on yesterday should open that day’s data for review and modification.
+
+The AI should assist if the user is unable to modify details.
+
+The calendar should display:
+
+Current date in a distinct color.
+
+Future dates in another color.
+
+Past dates in a different color.
+
+Missed login days in a separate highlight.
+
+A calendar icon should be available to open and check days easily.
+
+Today's Tracker Details
+
+The Today's Tracker should capture:
+
+Sleep: Slept at, woke at, and auto‑calculate approximate hours slept.
+
+Body Check:
+
+Morning: tired / active / good
+
+Afternoon: stressed / tired / sleepy / weak
+
+Evening & Night: similar options
+
+Food Consumption: Morning, afternoon, evening, night.
+
+Junk/Sugar Intake: Optional, based on user preference.
+
+The interface should:
+
+Provide structured input fields with minimal space wasted on AI prompts.
+
+Allow users to chat directly with AI if they are busy, so the AI fills in the sections dynamically.
+
+Support modification of existing entries and addition of new sections (e.g., workout time, office hours).
+
+It should be dynamic, meaning section values can be modified and new sections added as needed.
