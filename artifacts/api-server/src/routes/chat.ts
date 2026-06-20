@@ -30,39 +30,33 @@ function getAI(): GoogleGenAI {
 }
 
 const SYSTEM_PROMPTS: Record<string, string> = {
-  checkup: `You are VitalGuide AI, a compassionate and knowledgeable health assistant. You help users understand their symptoms and suggest safe, evidence-based actions.
+  checkup: `You are VitalGuide AI, a compassionate health assistant. Be concise and direct — 2-4 sentences per response unless detail is truly needed.
 
-Key rules:
-- Always start by gathering more context through follow-up questions before giving advice
-- NEVER diagnose diseases — only suggest what a person might consider
-- For any symptoms that could be serious (chest pain, difficulty breathing, severe pain, high fever, etc.), IMMEDIATELY recommend seeking emergency care and provide emergency contacts (911/112)
-- Suggest OTC remedies only for clearly minor conditions (mild cold, headache, minor cuts)
-- Always warn: "This is not medical advice. Consult a doctor for proper diagnosis."
-- Be warm, non-alarmist, and clear
-- Ask about: duration, severity (1-10), other symptoms, existing conditions, current medications
-- When the user mentions new health information (blood pressure readings, test results, new diagnoses, new medications, etc.), explicitly acknowledge it and tell them it will be reflected in their health profile`,
+Rules:
+- Ask 1-2 focused follow-up questions before giving advice; don't bombard the user
+- NEVER diagnose — only suggest what to consider
+- For emergencies (chest pain, difficulty breathing, severe pain, high fever): immediately say "EMERGENCY" and tell them to call 911/112
+- Suggest OTC remedies only for clearly minor issues
+- Always end responses with: "This is not medical advice. See a doctor for proper diagnosis."
+- Use the user's profile to personalize responses`,
 
-  planner: `You are VitalGuide AI, a personal health plan coach. You help users follow their health plans, doctor-prescribed courses, and wellness goals.
+  planner: `You are VitalGuide AI, a personal health coach. Be concise — 2-4 sentences per response.
 
-Key rules:
-- Track what the user has eaten, drunk, and done today
-- Remind them of their plan and gently correct deviations
-- For medication courses: remind timing, dosage context, and what to eat/avoid
-- For diet plans: assess food choices against their goals, educate on why certain foods help or hurt
-- Keep a supportive, encouraging tone — no shaming
-- Always factor in their medical conditions and goals
-- For the current conversation, track: food logged, water intake, medication taken, mood, sleep`,
+Rules:
+- Help users follow their medication, diet, and fitness plans
+- Gently correct deviations without shaming
+- Keep a supportive, encouraging tone
+- Reference their logged data (food, water, sleep, mood) to personalize advice
+- Factor in their medical conditions and goals`,
 
-  education: `You are VitalGuide AI, a health educator focused on food, nutrition, medication, and wellness science.
+  education: `You are VitalGuide AI, a health educator. Be concise — answer in 3-5 sentences unless the user asks for more detail.
 
-Key rules:
-- Give evidence-based information, cite scientific reasoning (not papers, just clear explanations)
-- Bust myths enthusiastically — especially about sugar, weight loss, processed food, fat loss vs weight loss, sleep
-- When a user asks about a food item: cover nutritional value, health impacts, when/how much is safe, who should avoid it
-- Be especially helpful for parents asking about children's nutrition
-- Cover recent health discoveries when relevant
-- Use simple language — explain like you're talking to a smart friend, not a doctor
-- Always personalize answers to the user's profile when available`,
+Rules:
+- Give evidence-based information in simple, friendly language
+- Bust myths enthusiastically — especially about diet, weight loss, sleep, supplements
+- When asked about a food: cover nutrition, health impact, who should avoid it
+- Personalize answers to the user's profile when relevant
+- Offer to explain more if they want deeper detail`,
 };
 
 router.delete("/conversations/:id", async (req, res) => {
@@ -148,18 +142,11 @@ router.post("/conversations/:id/messages", async (req, res): Promise<void> => {
       })();
 
       systemPrompt += `\n\n=== USER HEALTH PROFILE ===
-Name: ${profile.name}
-Age: ${profile.age} years
-Gender: ${profile.gender ?? "unspecified"}
-Blood Group: ${profile.bloodGroup ?? "unknown"}
-Weight: ${profile.weight ?? "unknown"} kg | Height: ${profile.height ?? "unknown"} cm
-Medical Conditions: ${profile.medicalConditions ?? "none"}
-Current Medications: ${profile.medications ?? "none"}
-Allergies: ${profile.allergies ?? "none"}
-Sleep: ${profile.sleepHours ?? "unknown"} hrs/night
-Activity Level: ${profile.activityLevel ?? "unknown"}
-Health Goals: ${profile.goals ?? "none"}
-Location: ${profile.location ?? "unknown"}`;
+Name: ${profile.name} | Age: ${profile.age} | Gender: ${profile.gender ?? "unspecified"}
+Blood Group: ${profile.bloodGroup ?? "unknown"} | Weight: ${profile.weight ?? "?"}kg | Height: ${profile.height ?? "?"}cm
+Conditions: ${profile.medicalConditions ?? "none"} | Medications: ${profile.medications ?? "none"}
+Allergies: ${profile.allergies ?? "none"} | Sleep: ${profile.sleepHours ?? "?"}hrs | Activity: ${profile.activityLevel ?? "unknown"}
+Goals: ${profile.goals ?? "none"} | Location: ${profile.location ?? "unknown"}`;
 
       if (Object.keys(additionalDetails).length > 0) {
         const vitalsText = Object.entries(additionalDetails)
@@ -169,8 +156,8 @@ Location: ${profile.location ?? "unknown"}`;
             const val = Array.isArray(v) ? (v as unknown[]).join(", ") : typeof v === "object" ? JSON.stringify(v) : String(v);
             return `${label}: ${val}`;
           })
-          .join("\n");
-        systemPrompt += `\n\nPersonalized Health Data (from medical documents & past checkups):\n${vitalsText}`;
+          .join(" | ");
+        systemPrompt += `\nVitals/Labs: ${vitalsText}`;
       }
     }
 
@@ -179,14 +166,14 @@ Location: ${profile.location ?? "unknown"}`;
         const recentDocs = await db.select().from(medicalDocumentsTable)
           .where(and(eq(medicalDocumentsTable.clerkUserId, userId), eq(medicalDocumentsTable.belongsToUser, true)))
           .orderBy(desc(medicalDocumentsTable.uploadedAt))
-          .limit(5);
+          .limit(3);
 
         if (recentDocs.length > 0) {
           const docContext = recentDocs.map(d => {
             const date = d.documentDate ?? d.uploadedAt.toISOString().split("T")[0];
             return `- ${d.filename} (${date}): ${d.summary ?? "No summary"}`;
           }).join("\n");
-          systemPrompt += `\n\n=== RECENT MEDICAL DOCUMENTS (user verified) ===\n${docContext}\nUse this context to give more personalized and accurate health guidance.`;
+          systemPrompt += `\n\n=== RECENT MEDICAL DOCUMENTS ===\n${docContext}`;
         }
       } catch (docErr) {
         logger.warn({ docErr }, "Failed to fetch documents for checkup context");
@@ -209,7 +196,7 @@ Location: ${profile.location ?? "unknown"}`;
       contents: chatContents,
       config: {
         systemInstruction: systemPrompt,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 2048,
       },
     });
 

@@ -1,3 +1,5 @@
 - [Replit artifact workflow conflict](artifact-workflow-conflict.md) — `artifacts/api-server: API Server` owns port 8080; `Backend API` custom workflow conflicts and must not be restarted.
 - [Separator component missing](shadcn-separator.md) — shadcn Separator is NOT installed; use `<div className="border-t border-slate-100" />` instead.
 - [Today's Log schema](todays-log-schema.md) — `daily_logs` table extended with sleep, body-check, food-by-meal, junk intake, isCompleted, customSections fields (pushed June 2026).
+- [Chat query key bug fix](chat-query-key.md) — `useGetConversationMessages` takes `id: number` directly; never pass `{id: number}` as first arg or as queryKey arg — causes cache mismatch and messages appear lost on navigation.
+- [Checkup auto-prompt flow](checkup-auto-prompt.md) — Profile doc "Analyze" navigates to `/checkup?prompt=<encoded>`; CheckupPage reads URL param on mount, auto-creates conversation, passes decoded string as `autoPrompt` prop to ChatInterface.

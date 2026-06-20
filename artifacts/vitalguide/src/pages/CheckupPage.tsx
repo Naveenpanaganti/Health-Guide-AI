@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useListConversations, useGetConversationMessages, useCreateConversation, getListConversationsQueryKey, getGetConversationMessagesQueryKey } from "@workspace/api-client-react";
 import ChatInterface, { type ChatInterfaceHandle } from "@/components/chat/ChatInterface";
 import { Button } from "@/components/ui/button";
@@ -155,11 +155,11 @@ function DocumentUploadButton({
 
   const doUpload = async (file: File, belongsToUser: boolean) => {
     setUploading(true);
-    const form = new FormData();
-    form.append("document", file);
-    form.append("belongsToUser", String(belongsToUser));
+    const formData = new FormData();
+    formData.append("document", file);
+    formData.append("belongsToUser", String(belongsToUser));
     try {
-      const res = await fetch("/api/documents/upload", { method: "POST", credentials: "include", body: form });
+      const res = await fetch("/api/documents/upload", { method: "POST", credentials: "include", body: formData });
       if (!res.ok) throw new Error("Upload failed");
       const doc: DocUploadResult = await res.json();
 
@@ -217,14 +217,34 @@ export default function CheckupPage() {
   const checkupConvos = conversations?.filter(c => c.mode === "checkup") || [];
   const [activeId, setActiveId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
   const activeConvo = checkupConvos.find(c => c.id === activeId) ?? checkupConvos[0] ?? null;
   const effectiveId = activeId ?? activeConvo?.id ?? null;
 
   const { data: msgs, isLoading: isLoadingMsgs } = useGetConversationMessages(
-    { id: effectiveId! },
-    { query: { enabled: !!effectiveId, queryKey: getGetConversationMessagesQueryKey({ id: effectiveId! }) } }
+    effectiveId!,
+    { query: { enabled: !!effectiveId, queryKey: getGetConversationMessagesQueryKey(effectiveId!) } }
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const prompt = params.get("prompt");
+    if (prompt) {
+      const decoded = decodeURIComponent(prompt);
+      setPendingPrompt(decoded);
+      window.history.replaceState({}, "", "/checkup");
+      createConversation.mutate(
+        { data: { title: `Document Analysis — ${new Date().toLocaleDateString()}`, mode: "checkup" } },
+        {
+          onSuccess: (newConvo) => {
+            queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
+            setActiveId(newConvo.id);
+          },
+        }
+      );
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleNew = () => {
     createConversation.mutate(
@@ -233,6 +253,7 @@ export default function CheckupPage() {
         onSuccess: (newConvo) => {
           queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
           setActiveId(newConvo.id);
+          setPendingPrompt(null);
         },
         onError: () => toast({ title: "Failed to create conversation", variant: "destructive" }),
       }
@@ -253,13 +274,13 @@ export default function CheckupPage() {
   };
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-8rem)]">
+    <div className="flex gap-4 md:gap-6 h-[calc(100vh-8rem)] md:h-[calc(100vh-8rem)]">
       {/* Sidebar */}
-      <div className="w-64 flex-shrink-0 flex flex-col gap-3">
+      <div className="w-48 md:w-64 flex-shrink-0 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Stethoscope className="w-5 h-5 text-teal-600" />
-            <h2 className="font-semibold text-slate-800">Health Checkup</h2>
+            <h2 className="font-semibold text-slate-800 text-sm md:text-base">Health Checkup</h2>
           </div>
           <Button size="sm" variant="ghost" onClick={handleNew} disabled={createConversation.isPending} className="h-8 w-8 p-0">
             <Plus className="w-4 h-4" />
@@ -286,9 +307,9 @@ export default function CheckupPage() {
                 className={`group flex items-center justify-between gap-1 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
                   (effectiveId === c.id) ? "bg-teal-50 text-teal-700" : "hover:bg-slate-100 text-slate-700"
                 }`}
-                onClick={() => setActiveId(c.id)}
+                onClick={() => { setActiveId(c.id); setPendingPrompt(null); }}
               >
-                <span className="text-sm truncate flex-1">{c.title}</span>
+                <span className="text-xs md:text-sm truncate flex-1">{c.title}</span>
                 <button
                   type="button"
                   className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 transition-all"
@@ -331,6 +352,7 @@ export default function CheckupPage() {
             conversationId={effectiveId}
             mode="checkup"
             initialMessages={msgs ?? []}
+            autoPrompt={pendingPrompt ?? undefined}
           />
         )}
       </div>

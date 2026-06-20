@@ -15,6 +15,7 @@ interface ChatInterfaceProps {
   conversationId: number;
   initialMessages?: Message[];
   mode: "checkup" | "planner" | "education";
+  autoPrompt?: string;
 }
 
 type ChatError =
@@ -90,7 +91,7 @@ function ErrorBanner({ error, onDismiss }: { error: ChatError; onDismiss: () => 
 }
 
 const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(function ChatInterface(
-  { conversationId, initialMessages = [], mode },
+  { conversationId, initialMessages = [], mode, autoPrompt },
   ref
 ) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -99,9 +100,17 @@ const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(functi
   const [chatError, setChatError] = useState<ChatError | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const autoPromptFiredRef = useRef(false);
 
   useEffect(() => {
     setMessages(initialMessages);
+    autoPromptFiredRef.current = false;
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (initialMessages.length > 0) {
+      setMessages(initialMessages);
+    }
   }, [initialMessages]);
 
   useEffect(() => {
@@ -214,6 +223,14 @@ const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(functi
     }
   };
 
+  useEffect(() => {
+    if (autoPrompt && !autoPromptFiredRef.current && !isStreaming) {
+      autoPromptFiredRef.current = true;
+      const timer = setTimeout(() => sendText(autoPrompt), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [autoPrompt]);
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -255,11 +272,11 @@ const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(functi
           )}
 
           {messages.map((msg) => (
-            <div key={msg.id} className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${getIconColors(msg.role)}`}>
-                {msg.role === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+            <div key={msg.id} className={`flex gap-3 md:gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+              <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${getIconColors(msg.role)}`}>
+                {msg.role === "user" ? <User className="w-3.5 h-3.5 md:w-4 md:h-4" /> : <Bot className="w-3.5 h-3.5 md:w-4 md:h-4" />}
               </div>
-              <div className={`max-w-[85%] rounded-2xl px-5 py-3.5 text-[15px] leading-relaxed shadow-sm ${
+              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm md:text-[15px] leading-relaxed shadow-sm ${
                 msg.role === "user"
                   ? "bg-teal-600 text-white rounded-tr-sm"
                   : `${getRoleColors(msg.role)} rounded-tl-sm`
@@ -282,21 +299,21 @@ const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(functi
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t border-slate-100 bg-slate-50/80">
-        <form onSubmit={sendMessage} className="flex gap-3 max-w-4xl mx-auto">
+      <div className="p-3 md:p-4 border-t border-slate-100 bg-slate-50/80">
+        <form onSubmit={sendMessage} className="flex gap-2 md:gap-3 max-w-4xl mx-auto">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
-            className="flex-1 bg-white border-slate-200 shadow-sm h-12 text-base rounded-full px-5 focus-visible:ring-teal-600"
+            className="flex-1 bg-white border-slate-200 shadow-sm h-11 md:h-12 text-sm md:text-base rounded-full px-4 md:px-5 focus-visible:ring-teal-600"
             disabled={isStreaming}
           />
           <Button
             type="submit"
             disabled={!input.trim() || isStreaming}
-            className="h-12 w-12 rounded-full p-0 flex-shrink-0 bg-teal-600 hover:bg-teal-700 text-white shadow-sm"
+            className="h-11 w-11 md:h-12 md:w-12 rounded-full p-0 flex-shrink-0 bg-teal-600 hover:bg-teal-700 text-white shadow-sm"
           >
-            <Send className="w-5 h-5 ml-1" />
+            <Send className="w-4 h-4 md:w-5 md:h-5 ml-0.5" />
           </Button>
         </form>
       </div>

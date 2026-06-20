@@ -1,4 +1,6 @@
 import { useState, useRef } from "react";
+import { useLocation } from "wouter";
+import { useUser } from "@clerk/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -20,10 +22,14 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   User, Pencil, X, Save, Heart, Pill, Dumbbell, Upload, FileText, Trash2,
   Loader2, ChevronDown, ChevronUp, Activity, Sparkles, ShieldCheck, UserX,
+  Stethoscope, Mail, Eye,
 } from "lucide-react";
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -144,7 +150,7 @@ function OwnershipDialog({
           <AlertDialogDescription className="space-y-2 pt-1">
             <span className="font-medium text-slate-700 block">&quot;{filename}&quot;</span>
             <span className="block">
-              If this is <strong>your</strong> document, VitalGuide will read it and intelligently update your health profile with any new information found — but only if the document is more recent than your last profile update.
+              If this is <strong>your</strong> document, VitalGuide will read it and intelligently update your health profile with any new information found.
             </span>
             <span className="block text-xs text-slate-400">
               If it belongs to someone else, it will be saved for reference only and will not affect your profile.
@@ -175,14 +181,166 @@ function OwnershipDialog({
   );
 }
 
+function buildCheckupPrompt(doc: MedicalDocument): string {
+  const lines: string[] = [];
+  lines.push(`I have a medical document I'd like analyzed: "${doc.filename}"`);
+  if (doc.documentDate) lines.push(`Document date: ${doc.documentDate}`);
+  if (doc.summary) {
+    lines.push("");
+    lines.push(`Summary: ${doc.summary}`);
+  }
+
+  const data = doc.extractedData;
+  if (data) {
+    const keyFields: { label: string; key: string }[] = [
+      { label: "Blood Group", key: "bloodGroup" },
+      { label: "Diagnoses", key: "diagnoses" },
+      { label: "Medications", key: "medications" },
+      { label: "Allergies", key: "allergies" },
+      { label: "Chief Complaints", key: "chiefComplaints" },
+      { label: "Doctor", key: "doctorName" },
+    ];
+    const found = keyFields.filter(f => data[f.key]);
+    if (found.length > 0) {
+      lines.push("");
+      lines.push("Key details:");
+      for (const { label, key } of found) {
+        const val = data[key];
+        const display = Array.isArray(val)
+          ? (val as unknown[]).map(v => typeof v === "object" ? JSON.stringify(v) : String(v)).join(", ")
+          : typeof val === "object" ? JSON.stringify(val) : String(val);
+        lines.push(`• ${label}: ${display}`);
+      }
+    }
+    if (data.testResults && typeof data.testResults === "object") {
+      const results = Object.entries(data.testResults as Record<string, unknown>);
+      if (results.length > 0) {
+        lines.push("");
+        lines.push("Test Results:");
+        for (const [k, v] of results) {
+          lines.push(`• ${k.replace(/([A-Z])/g, " $1").trim()}: ${v}`);
+        }
+      }
+    }
+  }
+
+  lines.push("");
+  lines.push(
+    doc.belongsToUser
+      ? "This is my document. Please help me understand what these results mean for my health and what I should be aware of."
+      : "This document belongs to a family member. Please help me understand the medical information in it."
+  );
+  return lines.join("\n");
+}
+
+function DocumentPopup({
+  doc,
+  onClose,
+  onAnalyze,
+}: {
+  doc: MedicalDocument;
+  onClose: () => void;
+  onAnalyze: (doc: MedicalDocument) => void;
+}) {
+  const data = doc.extractedData ?? {};
+  const vitals = Object.entries(data).filter(([k, v]) => k !== "summary" && isVitalsKey(k) && v);
+  const others = Object.entries(data).filter(([k, v]) => k !== "summary" && !isVitalsKey(k) && v);
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <FileText className="w-4 h-4 text-teal-600 flex-shrink-0" />
+            <span className="truncate">{doc.filename}</span>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {doc.belongsToUser === true && (
+              <Badge className="bg-teal-50 text-teal-700 border-teal-200 text-xs">My Document</Badge>
+            )}
+            {doc.belongsToUser === false && (
+              <Badge variant="secondary" className="text-xs">Someone Else's</Badge>
+            )}
+            {doc.documentDate && (
+              <span className="text-xs text-slate-500">Doc date: {doc.documentDate}</span>
+            )}
+            <span className="text-xs text-slate-400">
+              Uploaded {new Date(doc.uploadedAt).toLocaleDateString()}
+            </span>
+          </div>
+
+          {doc.summary && (
+            <div className="bg-teal-50 rounded-lg p-3 border border-teal-100">
+              <p className="text-xs font-semibold text-teal-700 mb-1 uppercase tracking-wide">Summary</p>
+              <p className="text-sm text-slate-700 leading-relaxed">{doc.summary}</p>
+            </div>
+          )}
+
+          {vitals.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Vitals & Lab Results</p>
+              <div className="grid grid-cols-2 gap-2">
+                {vitals.map(([k, v]) => (
+                  <div key={k} className="bg-white border border-teal-100 rounded-lg px-3 py-2">
+                    <p className="text-xs text-teal-500 font-medium">{formatKey(k)}</p>
+                    <p className="text-sm font-semibold text-slate-800">{formatValue(v)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {others.filter(([k]) => !["patientName", "reportDate", "summary"].includes(k)).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Other Details</p>
+              <div className="space-y-1.5">
+                {others
+                  .filter(([k]) => !["patientName", "reportDate", "summary"].includes(k))
+                  .map(([k, v]) => (
+                    <div key={k} className="flex gap-2 text-xs text-slate-600">
+                      <span className="font-medium text-slate-500 min-w-28 capitalize">{formatKey(k)}:</span>
+                      <span className="text-slate-700">{formatValue(v)}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {!doc.summary && Object.keys(data).length === 0 && (
+            <p className="text-sm text-slate-400 text-center py-4">No data was extracted from this document.</p>
+          )}
+        </div>
+
+        <DialogFooter className="flex-col sm:flex-row gap-2 pt-2">
+          <Button variant="outline" onClick={onClose} size="sm">Close</Button>
+          <Button
+            className="bg-teal-600 hover:bg-teal-700 text-white gap-2"
+            size="sm"
+            onClick={() => onAnalyze(doc)}
+          >
+            <Stethoscope className="w-4 h-4" />
+            Analyze in Checkup
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DocumentUploadPanel({
-  onExtracted, onProfileUpdated,
-}: { onExtracted: (data: Record<string, unknown>) => void; onProfileUpdated: () => void }) {
+  onExtracted, onProfileUpdated, onDocumentClick,
+}: {
+  onExtracted: (data: Record<string, unknown>) => void;
+  onProfileUpdated: () => void;
+  onDocumentClick: (doc: MedicalDocument) => void;
+}) {
   const [uploading, setUploading] = useState(false);
   const [documents, setDocuments] = useState<MedicalDocument[]>([]);
   const [loadedDocs, setLoadedDocs] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
-  const [expandedDoc, setExpandedDoc] = useState<number | null>(null);
   const [ownershipDialog, setOwnershipDialog] = useState<{ file: File; open: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -234,10 +392,7 @@ function DocumentUploadPanel({
         });
         if (doc.extractedData) onExtracted(doc.extractedData);
       } else if (doc.profileUpdateReason?.includes("older")) {
-        toast({
-          title: "Document saved — profile unchanged",
-          description: doc.profileUpdateReason,
-        });
+        toast({ title: "Document saved — profile unchanged", description: doc.profileUpdateReason });
         if (doc.extractedData) onExtracted(doc.extractedData);
       } else if (doc.extractedData && Object.keys(doc.extractedData).length > 0) {
         toast({ title: "Document scanned", description: "Medical data extracted and saved." });
@@ -308,9 +463,13 @@ function DocumentUploadPanel({
         <div className="space-y-2">
           {documents.length === 0 && <p className="text-xs text-slate-400 py-2">No documents uploaded yet.</p>}
           {documents.map(doc => (
-            <div key={doc.id} className="bg-white border border-slate-200 rounded-lg p-3 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
+            <div
+              key={doc.id}
+              className="bg-white border border-slate-200 rounded-lg p-3 space-y-1 hover:border-teal-200 transition-colors cursor-pointer group"
+              onClick={() => onDocumentClick(doc)}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <FileText className="w-4 h-4 text-teal-500 shrink-0" />
                   <span className="text-sm font-medium text-slate-800 truncate">{doc.filename}</span>
                   {doc.belongsToUser === true && (
@@ -321,25 +480,20 @@ function DocumentUploadPanel({
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button type="button" onClick={() => setExpandedDoc(expandedDoc === doc.id ? null : doc.id)} className="p-1 text-slate-400 hover:text-slate-700">
-                    {expandedDoc === doc.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </button>
-                  <button type="button" onClick={() => deleteDoc(doc.id)} className="p-1 text-slate-400 hover:text-red-500">
+                  <span className="text-xs text-teal-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                    <Eye className="w-3 h-3" /> View
+                  </span>
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); deleteDoc(doc.id); }}
+                    className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-              {doc.summary && <p className="text-xs text-slate-500">{doc.summary}</p>}
-              {doc.documentDate && <p className="text-xs text-slate-400">Document date: {doc.documentDate}</p>}
-              {expandedDoc === doc.id && doc.extractedData && (
-                <div className="mt-2 bg-slate-50 rounded-lg p-3 text-xs text-slate-700 space-y-1">
-                  {Object.entries(doc.extractedData).filter(([k]) => k !== "summary").map(([k, v]) => (
-                    <div key={k} className="flex gap-2">
-                      <span className="font-medium text-slate-500 capitalize min-w-28">{formatKey(k)}:</span>
-                      <span>{formatValue(v)}</span>
-                    </div>
-                  ))}
-                </div>
+              {doc.summary && (
+                <p className="text-xs text-slate-500 pl-6 truncate">{doc.summary}</p>
               )}
             </div>
           ))}
@@ -350,12 +504,15 @@ function DocumentUploadPanel({
 }
 
 export default function ProfilePage() {
+  const [, setLocation] = useLocation();
+  const { user } = useUser();
   const { data: profile, isLoading } = useGetProfile({ query: { queryKey: getGetProfileQueryKey() } });
   const upsertProfile = useUpsertProfile();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [localAdditional, setLocalAdditional] = useState<Record<string, unknown> | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<MedicalDocument | null>(null);
 
   const form = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -394,9 +551,14 @@ export default function ProfilePage() {
   };
 
   const handleDocExtracted = (data: Record<string, unknown>) => setLocalAdditional(data);
-
   const handleProfileUpdated = () => {
     queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+  };
+
+  const handleAnalyzeDoc = (doc: MedicalDocument) => {
+    setSelectedDoc(null);
+    const prompt = encodeURIComponent(buildCheckupPrompt(doc));
+    setLocation(`/checkup?prompt=${prompt}`);
   };
 
   const parsedAdditional: Record<string, unknown> | null = (() => {
@@ -433,22 +595,39 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-300">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-teal-100 flex items-center justify-center">
-            <User className="w-7 h-7 text-teal-700" />
+      {selectedDoc && (
+        <DocumentPopup
+          doc={selectedDoc}
+          onClose={() => setSelectedDoc(null)}
+          onAnalyze={handleAnalyzeDoc}
+        />
+      )}
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 md:gap-4">
+          <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-teal-100 flex items-center justify-center flex-shrink-0">
+            {user?.imageUrl ? (
+              <img src={user.imageUrl} alt="Profile" className="w-12 h-12 md:w-14 md:h-14 rounded-full object-cover" />
+            ) : (
+              <User className="w-6 h-6 md:w-7 md:h-7 text-teal-700" />
+            )}
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{profile?.name ?? "Your Profile"}</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Health profile and personal details</p>
+            <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">{profile?.name ?? "Your Profile"}</h1>
+            {user?.primaryEmailAddress && (
+              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                <Mail className="w-3 h-3" />
+                {user.primaryEmailAddress.emailAddress}
+              </p>
+            )}
           </div>
         </div>
         {!editing ? (
-          <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="gap-2 border-slate-200">
-            <Pencil className="w-4 h-4" />Edit Profile
+          <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="gap-2 border-slate-200 flex-shrink-0">
+            <Pencil className="w-4 h-4" />Edit
           </Button>
         ) : (
-          <Button variant="ghost" size="sm" onClick={() => { setEditing(false); form.reset(); setLocalAdditional(null); }} className="gap-2 text-slate-500">
+          <Button variant="ghost" size="sm" onClick={() => { setEditing(false); form.reset(); setLocalAdditional(null); }} className="gap-2 text-slate-500 flex-shrink-0">
             <X className="w-4 h-4" />Cancel
           </Button>
         )}
@@ -557,10 +736,14 @@ export default function ProfilePage() {
             <Card className="border-slate-200 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2"><Upload className="w-4 h-4 text-teal-600" />Medical Documents</CardTitle>
-                <CardDescription className="text-xs">Upload lab reports, prescriptions, or health records. AI will scan, confirm ownership, and update your profile if the document is recent.</CardDescription>
+                <CardDescription className="text-xs">Upload lab reports, prescriptions, or health records. AI will scan and update your profile if the document is yours and recent.</CardDescription>
               </CardHeader>
               <CardContent>
-                <DocumentUploadPanel onExtracted={handleDocExtracted} onProfileUpdated={handleProfileUpdated} />
+                <DocumentUploadPanel
+                  onExtracted={handleDocExtracted}
+                  onProfileUpdated={handleProfileUpdated}
+                  onDocumentClick={setSelectedDoc}
+                />
               </CardContent>
             </Card>
 
@@ -626,7 +809,6 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Health Vitals from documents/checkups */}
           {vitalsEntries.length > 0 && (
             <Card className="border-teal-200 shadow-sm bg-gradient-to-br from-teal-50/60 to-white">
               <CardHeader className="pb-3">
@@ -648,14 +830,13 @@ export default function ProfilePage() {
             </Card>
           )}
 
-          {/* Personalized Health Data */}
           {otherEntries.length > 0 && (
             <Card className="border-indigo-100 shadow-sm bg-indigo-50/20">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2 text-indigo-800">
                   <Sparkles className="w-4 h-4 text-indigo-500" />Personalized Health Data
                 </CardTitle>
-                <CardDescription className="text-xs text-indigo-600">Additional details recorded from your documents and health history</CardDescription>
+                <CardDescription className="text-xs text-indigo-600">Additional details from documents and health history</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -673,10 +854,16 @@ export default function ProfilePage() {
           <Card className="border-slate-200 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2"><Upload className="w-4 h-4 text-teal-600" />Medical Documents</CardTitle>
-              <CardDescription className="text-xs">Upload lab reports, prescriptions, or health records. Confirm ownership and AI will update your profile intelligently.</CardDescription>
+              <CardDescription className="text-xs">
+                Click any document to view details and analyze it with AI. Upload new documents to update your profile.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <DocumentUploadPanel onExtracted={handleDocExtracted} onProfileUpdated={handleProfileUpdated} />
+              <DocumentUploadPanel
+                onExtracted={handleDocExtracted}
+                onProfileUpdated={handleProfileUpdated}
+                onDocumentClick={setSelectedDoc}
+              />
             </CardContent>
           </Card>
         </div>
