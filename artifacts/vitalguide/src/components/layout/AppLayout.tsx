@@ -9,7 +9,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user } = useUser();
 
   const navItems = [
-    { name: "My Profile", path: "/profile", icon: <UserCircle className="w-5 h-5" /> },
     { name: "Dashboard", path: "/dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
     { name: "Health Checkup", path: "/checkup", icon: <Stethoscope className="w-5 h-5" /> },
     { name: "Plan Tracker", path: "/planner", icon: <CalendarHeart className="w-5 h-5" /> },

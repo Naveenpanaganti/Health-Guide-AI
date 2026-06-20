@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { Send, Bot, User, AlertTriangle, WifiOff, KeyRound, Gauge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getGetConversationMessagesQueryKey, type Message } from "@workspace/api-client-react";
 import { queryClient } from "@/lib/queryClient";
+
+export interface ChatInterfaceHandle {
+  sendMessage: (text: string) => void;
+}
 
 interface ChatInterfaceProps {
   conversationId: number;
@@ -85,7 +89,10 @@ function ErrorBanner({ error, onDismiss }: { error: ChatError; onDismiss: () => 
   );
 }
 
-export default function ChatInterface({ conversationId, initialMessages = [], mode }: ChatInterfaceProps) {
+const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(function ChatInterface(
+  { conversationId, initialMessages = [], mode },
+  ref
+) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -123,21 +130,18 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
     return "bg-slate-100 text-slate-700";
   };
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isStreaming) return;
+  const sendText = async (content: string) => {
+    if (!content.trim() || isStreaming) return;
 
     setChatError(null);
 
     const userMessage: Message = {
       id: Date.now(),
       role: "user",
-      content: input,
+      content,
       createdAt: new Date().toISOString(),
     };
 
-    const contentToSend = input;
-    setInput("");
     setMessages(prev => [...prev, userMessage]);
     setIsStreaming(true);
 
@@ -149,7 +153,7 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content: contentToSend }),
+        body: JSON.stringify({ content }),
       });
 
       if (!res.ok) {
@@ -209,6 +213,18 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
       queryClient.invalidateQueries({ queryKey: getGetConversationMessagesQueryKey(conversationId) });
     }
   };
+
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    const text = input;
+    setInput("");
+    await sendText(text);
+  };
+
+  useImperativeHandle(ref, () => ({
+    sendMessage: (text: string) => { sendText(text); },
+  }));
 
   return (
     <div className="flex flex-col h-full bg-white rounded-xl overflow-hidden w-full">
@@ -286,4 +302,6 @@ export default function ChatInterface({ conversationId, initialMessages = [], mo
       </div>
     </div>
   );
-}
+});
+
+export default ChatInterface;

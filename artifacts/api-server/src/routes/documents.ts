@@ -189,6 +189,12 @@ router.post("/upload", upload.single("document"), async (req, res): Promise<void
 
     const documentDate = (extractedData.reportDate as string) ?? null;
 
+    const MEDICAL_FIELDS = ["diagnoses", "medications", "testResults", "bloodGroup", "allergies",
+      "doctorName", "chiefComplaints", "patientName", "reportDate", "hemoglobin",
+      "bloodPressure", "cholesterol", "bloodSugar", "hospitalName"];
+    const meaningfulFields = MEDICAL_FIELDS.filter(f => f in extractedData && extractedData[f]);
+    const isRelevantMedicalDoc = meaningfulFields.length >= 2;
+
     const doc = await db.insert(medicalDocumentsTable).values({
       clerkUserId: userId,
       filename: originalname,
@@ -207,6 +213,7 @@ router.post("/upload", upload.single("document"), async (req, res): Promise<void
     res.status(201).json({
       ...doc[0],
       extractedData,
+      isRelevantMedicalDoc,
       profileUpdated: profileMerge.updated,
       profileUpdateReason: profileMerge.reason,
       profileChanges: profileMerge.changes,
