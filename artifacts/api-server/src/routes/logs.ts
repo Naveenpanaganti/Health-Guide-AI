@@ -1,9 +1,26 @@
 import { Router } from "express";
 import { isAuthenticated } from "../auth/replitAuth";
-import { db, dailyLogsTable } from "@workspace/db";
+import { db, dailyLogsTable, userProfilesTable, plansTable } from "@workspace/db";
 import { eq, and, gte, desc } from "drizzle-orm";
 import { CreateLogBody } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
+import { GoogleGenAI } from "@google/genai";
+
+let _ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!_ai) {
+    const integrationApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+    const integrationBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+    const apiKey = integrationApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) throw new Error("No Gemini API key configured.");
+    if (integrationApiKey && integrationBaseUrl) {
+      _ai = new GoogleGenAI({ apiKey: integrationApiKey, httpOptions: { apiVersion: "", baseUrl: integrationBaseUrl } });
+    } else {
+      _ai = new GoogleGenAI({ apiKey });
+    }
+  }
+  return _ai;
+}
 
 const router = Router();
 
@@ -143,6 +160,91 @@ router.post("/", isAuthenticated, async (req: any, res) => {
   } catch (err) {
     logger.error({ err }, "Failed to create log");
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/analyze", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const { log, isCompleted } = req.body;
+  if (!log) return res.status(400).json({ error: "Log data required" });
+
+  try {
+    const [profiles, plans] = await Promise.all([
+      db.select().from(userProfilesTable).where(eq(userProfilesTable.clerkUserId, userId)),
+      db.select().from(plansTable).where(eq(plansTable.clerkUserId, userId)),
+    ]);
+
+    const profile = profiles[0];
+    const activePlans = plans.filter((p: any) => p.status === "active");
+
+    const profileCtx = profile
+      ? `User: ${profile.name}, Age: ${profile.age}, Goals: ${profile.goals ?? "general health"}, Conditions: ${profile.medicalConditions ?? "none"}, Medications: ${profile.medications ?? "none"}`
+      : "";
+
+    const plansCtx = activePlans.length
+      ? activePlans.map((p: any) => `${p.type} — "${p.title}"${p.description ? `: ${p.description}` : ""}`).join("; ")
+      : "No active plans";
+
+    const logParts: string[] = [];
+    if (log.mood) logParts.push(`Mood: ${log.mood}`);
+    if (log.sleepHours) logParts.push(`Sleep: ${log.sleepHours}h`);
+    if (log.sleepAt && log.wokeAt) logParts.push(`Slept ${log.sleepAt} – Woke ${log.wokeAt}`);
+    if (log.waterIntake) logParts.push(`Water: ${log.waterIntake} glasses`);
+    const meals = [log.foodMorning, log.foodAfternoon, log.foodEvening, log.foodNight].filter(Boolean);
+    if (meals.length) logParts.push(`Meals: ${meals.join(", ")}`);
+    if (log.junkSugarIntake) logParts.push(`Junk/sugar: ${log.junkSugarIntake}`);
+    if (log.bodyCheckMorning) logParts.push(`Morning feel: ${log.bodyCheckMorning}`);
+    if (log.bodyCheckEvening) logParts.push(`Evening feel: ${log.bodyCheckEvening}`);
+    if (log.notes) logParts.push(`Notes: ${log.notes}`);
+    const logCtx = logParts.length ? logParts.join(". ") : "Log is mostly empty so far.";
+
+    let prompt: string;
+
+    if (isCompleted) {
+      prompt = `You are VitalGuide AI, a warm and encouraging personal health coach.
+
+The user just completed their daily health log for today. Celebrate and motivate them.
+
+${profileCtx ? `Profile: ${profileCtx}` : ""}
+Active plans: ${plansCtx}
+Today's log: ${logCtx}
+
+Write a short end-of-day summary (3–4 sentences max):
+1. Celebrate 1–2 things that went well today (specific to their log).
+2. Mention one small thing to work on tomorrow.
+3. Give one concrete tip to prepare for a better tomorrow.
+Be warm, personal, and uplifting. No bullet points — conversational tone. No medical disclaimers.`;
+    } else {
+      const hour = new Date().getHours();
+      const timeOfDay = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+      const hoursLeft = Math.max(1, 23 - hour);
+      prompt = `You are VitalGuide AI, a caring personal health coach.
+
+The user saved a draft of their daily log. It's ${timeOfDay} (about ${hoursLeft} hours left in the day).
+
+${profileCtx ? `Profile: ${profileCtx}` : ""}
+Active plans: ${plansCtx}
+So far today: ${logCtx}
+
+Give 2–3 specific, friendly reminders or precautions for the rest of today based on their log and plans. 
+Focus on what's missing or needs attention (e.g. low water, skipped meals, medication reminder, workout, sleep time).
+Keep it to 3–4 sentences total. Conversational, no bullet points. End with one short encouraging line.`;
+    }
+
+    const ai = getAI();
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { maxOutputTokens: 220, temperature: 0.85 },
+    });
+
+    const message = result.text?.trim() ?? "Keep up the great work today!";
+    return res.json({ message, type: isCompleted ? "endofday" : "midday" });
+  } catch (err: any) {
+    logger.error({ err }, "Failed to analyze log");
+    return res.status(500).json({ error: "Analysis failed" });
   }
 });
 
