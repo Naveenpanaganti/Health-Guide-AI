@@ -127,6 +127,10 @@ export default function OnboardingPage() {
     upsertProfile.mutate({
       data: {
         ...data,
+        age: Number(data.age),
+        weight: data.weight ? Number(data.weight) : undefined,
+        height: data.height ? Number(data.height) : undefined,
+        sleepHours: data.sleepHours ? Number(data.sleepHours) : undefined,
         additionalDetails: additionalDetails ? JSON.stringify(additionalDetails) : undefined,
       }
     }, {
