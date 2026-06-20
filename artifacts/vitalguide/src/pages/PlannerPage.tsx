@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useAuth } from "@clerk/react";
+import { useAuth } from "@/hooks/use-auth";
 import { useListPlans, useCreatePlan, useGetTodayLog, useListConversations, useCreateConversation, useGetConversationMessages, getGetTodayLogQueryKey, getGetConversationMessagesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,6 @@ export default function PlannerPage() {
   const { data: convos } = useListConversations();
   const createPlan = useCreatePlan();
   const createConversation = useCreateConversation();
-  const { getToken } = useAuth();
   const { toast } = useToast();
 
   const [isAddPlanOpen, setIsAddPlanOpen] = useState(false);
@@ -78,17 +77,14 @@ export default function PlannerPage() {
   const openLogForDate = useCallback(async (date: string) => {
     setLogDate(date);
     try {
-      const token = await getToken();
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
       const isToday = date === new Date().toISOString().split("T")[0];
       const url = isToday ? "/api/logs/today" : `/api/logs/date/${date}`;
-      const res = await fetch(url, { headers });
+      const res = await fetch(url, { credentials: "include" });
       if (res.ok) setSelectedLog(await res.json());
       else setSelectedLog(null);
     } catch { setSelectedLog(null); }
     setLogOpen(true);
-  }, [getToken]);
+  }, []);
 
   const openTodayLog = () => openLogForDate(new Date().toISOString().split("T")[0]);
 

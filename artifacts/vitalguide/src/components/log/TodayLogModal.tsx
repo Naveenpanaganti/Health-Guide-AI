@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { useAuth } from "@clerk/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,7 +108,6 @@ const BODY_OPTIONS = {
 
 export default function TodayLogModal({ open, onOpenChange, date, initialLog, onSaved }: Props) {
   const today = date ?? new Date().toISOString().split("T")[0];
-  const { getToken } = useAuth();
   const { toast } = useToast();
 
   const [sleepAt, setSleepAt] = useState(initialLog?.sleepAt ?? "");
@@ -204,9 +202,7 @@ export default function TodayLogModal({ open, onOpenChange, date, initialLog, on
     setErrors({});
     setIsSaving(true);
     try {
-      const token = await getToken();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
 
       let url: string;
       let method: string;
@@ -220,7 +216,7 @@ export default function TodayLogModal({ open, onOpenChange, date, initialLog, on
         method = isToday ? "PATCH" : "POST";
       }
 
-      const res = await fetch(url, { method, headers, body: JSON.stringify(buildPayload(completed)) });
+      const res = await fetch(url, { method, headers, credentials: "include", body: JSON.stringify(buildPayload(completed)) });
       if (!res.ok) throw new Error("Failed to save");
       const data = await res.json();
       setExistingId(data.id);

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAuth } from "@clerk/express";
+import { isAuthenticated } from "../auth/replitAuth";
 import { db, plansTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { CreatePlanBody, UpdatePlanBody, GetPlanParams, UpdatePlanParams, DeletePlanParams } from "@workspace/api-zod";
@@ -7,8 +7,8 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
-  const { userId } = getAuth(req);
+router.get("/", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const plans = await db.select().from(plansTable).where(eq(plansTable.clerkUserId, userId));
@@ -19,8 +19,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
-  const { userId } = getAuth(req);
+router.post("/", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const parsed = CreatePlanBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -33,8 +33,8 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
-  const { userId } = getAuth(req);
+router.get("/:id", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const params = GetPlanParams.safeParse({ id: Number(req.params.id) });
   if (!params.success) return res.status(400).json({ error: "Invalid id" });
@@ -48,8 +48,8 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-router.patch("/:id", async (req, res) => {
-  const { userId } = getAuth(req);
+router.patch("/:id", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const params = UpdatePlanParams.safeParse({ id: Number(req.params.id) });
   if (!params.success) return res.status(400).json({ error: "Invalid id" });
@@ -65,8 +65,8 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
-  const { userId } = getAuth(req);
+router.delete("/:id", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const params = DeletePlanParams.safeParse({ id: Number(req.params.id) });
   if (!params.success) return res.status(400).json({ error: "Invalid id" });

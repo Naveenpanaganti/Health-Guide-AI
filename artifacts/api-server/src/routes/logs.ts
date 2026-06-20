@@ -1,14 +1,14 @@
 import { Router } from "express";
-import { getAuth } from "@clerk/express";
+import { isAuthenticated } from "../auth/replitAuth";
 import { db, dailyLogsTable } from "@workspace/db";
-import { eq, and, gte, desc, lte } from "drizzle-orm";
+import { eq, and, gte, desc } from "drizzle-orm";
 import { CreateLogBody } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
-  const { userId } = getAuth(req);
+router.get("/", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const sevenDaysAgo = new Date();
@@ -24,8 +24,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.get("/today", async (req, res) => {
-  const { userId } = getAuth(req);
+router.get("/today", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const today = new Date().toISOString().split("T")[0];
@@ -39,8 +39,8 @@ router.get("/today", async (req, res) => {
   }
 });
 
-router.patch("/today", async (req, res) => {
-  const { userId } = getAuth(req);
+router.patch("/today", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const today = new Date().toISOString().split("T")[0];
@@ -70,8 +70,8 @@ router.patch("/today", async (req, res) => {
   }
 });
 
-router.get("/dates", async (req, res) => {
-  const { userId } = getAuth(req);
+router.get("/dates", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const days = Number(req.query.days) || 60;
@@ -90,8 +90,8 @@ router.get("/dates", async (req, res) => {
   }
 });
 
-router.get("/date/:date", async (req, res) => {
-  const { userId } = getAuth(req);
+router.get("/date/:date", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const { date } = req.params;
@@ -105,8 +105,8 @@ router.get("/date/:date", async (req, res) => {
   }
 });
 
-router.patch("/:id", async (req, res) => {
-  const { userId } = getAuth(req);
+router.patch("/:id", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -131,8 +131,8 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-router.post("/", async (req, res) => {
-  const { userId } = getAuth(req);
+router.post("/", isAuthenticated, async (req: any, res) => {
+  const userId = req.user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const parsed = CreateLogBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useAuth } from "@clerk/react";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -16,17 +15,13 @@ const DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 export default function LogCalendar({ onSelectDate, selectedDate, refreshTrigger }: Props) {
-  const { getToken } = useAuth();
   const today = new Date().toISOString().split("T")[0];
   const [viewDate, setViewDate] = useState(new Date());
   const [logDates, setLogDates] = useState<LogDate[]>([]);
 
   const fetchDates = async () => {
     try {
-      const token = await getToken();
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/logs/dates?days=90", { headers });
+      const res = await fetch("/api/logs/dates?days=90", { credentials: "include" });
       if (res.ok) setLogDates(await res.json());
     } catch { /* silent */ }
   };

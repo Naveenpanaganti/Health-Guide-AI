@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAuth } from "@clerk/express";
+import { isAuthenticated } from "../auth/replitAuth";
 import multer from "multer";
 import { GoogleGenAI } from "@google/genai";
 import { db, medicalDocumentsTable, userProfilesTable } from "@workspace/db";
@@ -142,8 +142,8 @@ async function applyDocumentToProfile(
   }
 }
 
-router.post("/upload", upload.single("document"), async (req, res): Promise<void> => {
-  const { userId } = getAuth(req);
+router.post("/upload", upload.single("document"), isAuthenticated, async (req: any, res): Promise<void> => {
+  const userId = (req as any).user?.claims?.sub;
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
 
@@ -224,8 +224,8 @@ router.post("/upload", upload.single("document"), async (req, res): Promise<void
   }
 });
 
-router.get("/", async (req, res) => {
-  const { userId } = getAuth(req);
+router.get("/", isAuthenticated, async (req: any, res) => {
+  const userId = (req as any).user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const docs = await db.select().from(medicalDocumentsTable)
@@ -241,8 +241,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
-  const { userId } = getAuth(req);
+router.delete("/:id", isAuthenticated, async (req: any, res) => {
+  const userId = (req as any).user?.claims?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const id = Number(req.params.id);
   try {
