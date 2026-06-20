@@ -71,7 +71,15 @@ function formatDate(dateStr: string) {
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 }
 
-type SectionLabelProps = { icon: React.ReactNode; title: string; subtitle?: string };
+const MOODS = [
+  { value: "great", label: "😄 Great" },
+  { value: "good", label: "🙂 Good" },
+  { value: "okay", label: "😐 Okay" },
+  { value: "low", label: "😔 Low" },
+  { value: "bad", label: "😞 Bad" },
+];
+
+type SectionLabelProps = { icon: React.ReactNode; title: React.ReactNode; subtitle?: string };
 function SectionLabel({ icon, title, subtitle }: SectionLabelProps) {
   return (
     <div className="flex items-center gap-2 mb-3">
@@ -128,6 +136,7 @@ export default function TodayLogModal({ open, onOpenChange, date, initialLog, on
   );
   const [isSaving, setIsSaving] = useState(false);
   const [existingId, setExistingId] = useState<number | undefined>(initialLog?.id);
+  const [errors, setErrors] = useState<{ mood?: string; sleep?: string; water?: string }>({});
 
   useEffect(() => {
     if (initialLog) {
@@ -178,7 +187,21 @@ export default function TodayLogModal({ open, onOpenChange, date, initialLog, on
     isCompleted: completed,
   }), [today, mood, sleepAt, wokeAt, sleepHours, bodyCheck, water, food, showJunk, junk, notes, customSections]);
 
+  const validate = () => {
+    const newErrors: { mood?: string; sleep?: string; water?: string } = {};
+    if (!mood) newErrors.mood = "Please select how you felt today.";
+    if (!sleepAt || !wokeAt) newErrors.sleep = "Please enter both sleep and wake times.";
+    if (!water || Number(water) < 0) newErrors.water = "Please enter your water intake.";
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const save = async (completed: boolean) => {
+    if (completed && !validate()) {
+      toast({ title: "Please fill required fields", description: "Mood, sleep times, and water intake are required to mark complete.", variant: "destructive" });
+      return;
+    }
+    setErrors({});
     setIsSaving(true);
     try {
       const token = await getToken();
@@ -235,17 +258,18 @@ export default function TodayLogModal({ open, onOpenChange, date, initialLog, on
         <div className="p-6 space-y-7">
           {/* Sleep */}
           <section>
-            <SectionLabel icon={<Moon size={14} />} title="Sleep" subtitle="When did you sleep and wake up?" />
+            <SectionLabel icon={<Moon size={14} />} title={<span>Sleep <span className="text-red-500 ml-0.5">*</span></span>} subtitle="When did you sleep and wake up?" />
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-medium text-slate-600 mb-1.5 block">Slept at</label>
-                <Input type="time" value={sleepAt} onChange={e => setSleepAt(e.target.value)} className="h-10 bg-slate-50" />
+                <Input type="time" value={sleepAt} onChange={e => { setSleepAt(e.target.value); setErrors(p => ({ ...p, sleep: undefined })); }} className={cn("h-10 bg-slate-50", errors.sleep && "border-red-400 focus-visible:ring-red-300")} />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-600 mb-1.5 block">Woke at</label>
-                <Input type="time" value={wokeAt} onChange={e => setWokeAt(e.target.value)} className="h-10 bg-slate-50" />
+                <Input type="time" value={wokeAt} onChange={e => { setWokeAt(e.target.value); setErrors(p => ({ ...p, sleep: undefined })); }} className={cn("h-10 bg-slate-50", errors.sleep && "border-red-400 focus-visible:ring-red-300")} />
               </div>
             </div>
+            {errors.sleep && <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">⚠ {errors.sleep}</p>}
             {sleepHours !== null && (
               <div className="mt-2.5 flex items-center gap-2 text-sm text-teal-700 bg-teal-50 rounded-lg px-3 py-2">
                 <Clock size={13} />
@@ -253,6 +277,37 @@ export default function TodayLogModal({ open, onOpenChange, date, initialLog, on
                 <span className="text-teal-600 text-xs">calculated automatically</span>
               </div>
             )}
+          </section>
+
+          <div className="border-t border-slate-100" />
+
+          {/* Mood */}
+          <section>
+            <SectionLabel
+              icon={<span className="text-base">😊</span>}
+              title={<span>Overall Mood <span className="text-red-500 ml-0.5">*</span></span>}
+              subtitle="How are you feeling today overall?"
+            />
+            <div className="flex flex-wrap gap-2">
+              {MOODS.map(m => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => { setMood(prev => prev === m.value ? "" : m.value); setErrors(p => ({ ...p, mood: undefined })); }}
+                  className={cn(
+                    "px-4 py-2 rounded-full text-sm font-medium border transition-all",
+                    mood === m.value
+                      ? "bg-teal-600 text-white border-teal-600 shadow-sm"
+                      : errors.mood
+                        ? "border-red-300 bg-red-50 text-slate-600 hover:border-red-400"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:text-teal-700"
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {errors.mood && <p className="mt-1.5 text-xs text-red-500">⚠ {errors.mood}</p>}
           </section>
 
           <div className="border-t border-slate-100" />
@@ -299,18 +354,28 @@ export default function TodayLogModal({ open, onOpenChange, date, initialLog, on
 
           {/* Water */}
           <section>
-            <SectionLabel icon={<Droplets size={14} />} title="Water Intake" subtitle="How many glasses of water?" />
+            <SectionLabel
+              icon={<Droplets size={14} />}
+              title={<span>Water Intake <span className="text-red-500 ml-0.5">*</span></span>}
+              subtitle="How many glasses of water?"
+            />
             <div className="flex items-center gap-3">
-              <Input type="number" min={0} max={20} value={water} onChange={e => setWater(e.target.value)} className="h-10 bg-slate-50 w-28" placeholder="e.g. 6" />
+              <Input
+                type="number" min={0} max={20} value={water}
+                onChange={e => { setWater(e.target.value); setErrors(p => ({ ...p, water: undefined })); }}
+                className={cn("h-10 bg-slate-50 w-28", errors.water && "border-red-400 focus-visible:ring-red-300")}
+                placeholder="e.g. 6"
+              />
               <span className="text-sm text-slate-500">glasses</span>
               <div className="flex gap-1 ml-2">
                 {[4, 6, 8, 10].map(n => (
-                  <button key={n} type="button" onClick={() => setWater(String(n))} className={cn("px-2.5 py-1 rounded text-xs font-medium border transition-all", water === String(n) ? "bg-blue-100 text-blue-800 border-blue-300" : "bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300")}>
+                  <button key={n} type="button" onClick={() => { setWater(String(n)); setErrors(p => ({ ...p, water: undefined })); }} className={cn("px-2.5 py-1 rounded text-xs font-medium border transition-all", water === String(n) ? "bg-blue-100 text-blue-800 border-blue-300" : "bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300")}>
                     {n}
                   </button>
                 ))}
               </div>
             </div>
+            {errors.water && <p className="mt-1.5 text-xs text-red-500">⚠ {errors.water}</p>}
           </section>
 
           {/* Junk/Sugar */}
