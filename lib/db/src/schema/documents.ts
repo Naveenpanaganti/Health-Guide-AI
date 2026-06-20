@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean } from "drizzle-orm/pg-core";
 
 export const medicalDocumentsTable = pgTable("medical_documents", {
   id: serial("id").primaryKey(),
@@ -7,6 +7,8 @@ export const medicalDocumentsTable = pgTable("medical_documents", {
   mimeType: text("mime_type").notNull(),
   extractedData: text("extracted_data"),
   summary: text("summary"),
+  belongsToUser: boolean("belongs_to_user"),
+  documentDate: text("document_date"),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

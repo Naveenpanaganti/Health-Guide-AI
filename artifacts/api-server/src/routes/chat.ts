@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
-import { db, conversations, messages, userProfilesTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, conversations, messages, userProfilesTable, medicalDocumentsTable } from "@workspace/db";
+import { eq, and, desc } from "drizzle-orm";
 import { CreateConversationBody, SendMessageBody, GetConversationMessagesParams } from "@workspace/api-zod";
 import { GoogleGenAI } from "@google/genai";
 import { logger } from "../lib/logger";
@@ -30,7 +30,8 @@ Key rules:
 - Suggest OTC remedies only for clearly minor conditions (mild cold, headache, minor cuts)
 - Always warn: "This is not medical advice. Consult a doctor for proper diagnosis."
 - Be warm, non-alarmist, and clear
-- Ask about: duration, severity (1-10), other symptoms, existing conditions, current medications`,
+- Ask about: duration, severity (1-10), other symptoms, existing conditions, current medications
+- When the user mentions new health information (blood pressure readings, test results, new diagnoses, new medications, etc.), explicitly acknowledge it and tell them it will be reflected in their health profile`,
 
   planner: `You are VitalGuide AI, a personal health plan coach. You help users follow their health plans, doctor-prescribed courses, and wellness goals.
 
@@ -131,8 +132,56 @@ router.post("/conversations/:id/messages", async (req, res): Promise<void> => {
     const profile = profiles[0];
 
     let systemPrompt = SYSTEM_PROMPTS[convo.mode] ?? SYSTEM_PROMPTS.education;
+
     if (profile) {
-      systemPrompt += `\n\nUser profile: Name: ${profile.name}, Age: ${profile.age}, Gender: ${profile.gender ?? "unspecified"}, Weight: ${profile.weight ?? "unknown"}kg, Height: ${profile.height ?? "unknown"}cm, Medical conditions: ${profile.medicalConditions ?? "none"}, Medications: ${profile.medications ?? "none"}, Allergies: ${profile.allergies ?? "none"}, Sleep: ${profile.sleepHours ?? "unknown"}h/night, Activity level: ${profile.activityLevel ?? "unknown"}, Goals: ${profile.goals ?? "none"}, Location: ${profile.location ?? "unknown"}.`;
+      const additionalDetails: Record<string, unknown> = (() => {
+        try { return profile.additionalDetails ? JSON.parse(profile.additionalDetails) : {}; } catch { return {}; }
+      })();
+
+      systemPrompt += `\n\n=== USER HEALTH PROFILE ===
+Name: ${profile.name}
+Age: ${profile.age} years
+Gender: ${profile.gender ?? "unspecified"}
+Blood Group: ${profile.bloodGroup ?? "unknown"}
+Weight: ${profile.weight ?? "unknown"} kg | Height: ${profile.height ?? "unknown"} cm
+Medical Conditions: ${profile.medicalConditions ?? "none"}
+Current Medications: ${profile.medications ?? "none"}
+Allergies: ${profile.allergies ?? "none"}
+Sleep: ${profile.sleepHours ?? "unknown"} hrs/night
+Activity Level: ${profile.activityLevel ?? "unknown"}
+Health Goals: ${profile.goals ?? "none"}
+Location: ${profile.location ?? "unknown"}`;
+
+      if (Object.keys(additionalDetails).length > 0) {
+        const vitalsText = Object.entries(additionalDetails)
+          .filter(([k]) => k !== "summary")
+          .map(([k, v]) => {
+            const label = k.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase());
+            const val = Array.isArray(v) ? (v as unknown[]).join(", ") : typeof v === "object" ? JSON.stringify(v) : String(v);
+            return `${label}: ${val}`;
+          })
+          .join("\n");
+        systemPrompt += `\n\nPersonalized Health Data (from medical documents & past checkups):\n${vitalsText}`;
+      }
+    }
+
+    if (convo.mode === "checkup" && userId) {
+      try {
+        const recentDocs = await db.select().from(medicalDocumentsTable)
+          .where(and(eq(medicalDocumentsTable.clerkUserId, userId), eq(medicalDocumentsTable.belongsToUser, true)))
+          .orderBy(desc(medicalDocumentsTable.uploadedAt))
+          .limit(5);
+
+        if (recentDocs.length > 0) {
+          const docContext = recentDocs.map(d => {
+            const date = d.documentDate ?? d.uploadedAt.toISOString().split("T")[0];
+            return `- ${d.filename} (${date}): ${d.summary ?? "No summary"}`;
+          }).join("\n");
+          systemPrompt += `\n\n=== RECENT MEDICAL DOCUMENTS (user verified) ===\n${docContext}\nUse this context to give more personalized and accurate health guidance.`;
+        }
+      } catch (docErr) {
+        logger.warn({ docErr }, "Failed to fetch documents for checkup context");
+      }
     }
 
     const chatContents = historyRows.slice(-20).map((m) => ({
@@ -179,7 +228,7 @@ router.post("/conversations/:id/messages", async (req, res): Promise<void> => {
       userMessage = "Gemini API quota exceeded. Please check your Google AI billing or wait before retrying.";
     } else if (msg.includes("PERMISSION_DENIED")) {
       userMessage = "Gemini API key does not have permission. Ensure the Gemini API is enabled in your Google Cloud project.";
-    } else if (msg.includes("GEMINI_API_KEY environment variable is not set")) {
+    } else if (msg.includes("No Gemini API key")) {
       userMessage = "No Gemini API key configured. Please add GEMINI_API_KEY to your secrets.";
     }
 

@@ -16,8 +16,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { User, Pencil, X, Save, Heart, Pill, Dumbbell, Upload, FileText, Trash2, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  User, Pencil, X, Save, Heart, Pill, Dumbbell, Upload, FileText, Trash2,
+  Loader2, ChevronDown, ChevronUp, Activity, Sparkles, ShieldCheck, UserX,
+} from "lucide-react";
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
@@ -29,6 +36,30 @@ const MEDICAL_CONDITIONS = [
   "Chickenpox (History)", "Tuberculosis (History)", "COVID-19 (History)",
   "Anaemia", "High Cholesterol", "Migraine", "Sleep Apnea", "Other",
 ];
+
+const VITALS_KEYS = new Set([
+  "bloodpressure", "pulserate", "heartrate", "hemoglobin", "cholesterol",
+  "bloodsugar", "glucoselevel", "bmi", "oxygensaturation", "spo2",
+  "respiratoryrate", "temperature", "hba1c", "creatinine", "uricacid",
+  "triglycerides", "hdl", "ldl", "platelets", "wbc", "rbc",
+]);
+
+function isVitalsKey(k: string) {
+  return VITALS_KEYS.has(k.toLowerCase().replace(/[^a-z]/g, ""));
+}
+
+function formatKey(key: string) {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, s => s.toUpperCase())
+    .trim();
+}
+
+function formatValue(val: unknown): string {
+  if (Array.isArray(val)) return (val as unknown[]).map(v => typeof v === "object" ? JSON.stringify(v) : String(v)).join(", ");
+  if (typeof val === "object" && val !== null) return JSON.stringify(val);
+  return String(val);
+}
 
 const profileSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -47,38 +78,34 @@ const profileSchema = z.object({
 });
 type ProfileForm = z.infer<typeof profileSchema>;
 
+type DocUploadResult = {
+  id: number; filename: string; mimeType: string; summary: string | null;
+  uploadedAt: string; extractedData: Record<string, unknown> | null;
+  profileUpdated: boolean; profileUpdateReason?: string; profileChanges?: string[];
+};
+
 type MedicalDocument = {
-  id: number;
-  filename: string;
-  mimeType: string;
-  summary: string | null;
-  uploadedAt: string;
-  extractedData: Record<string, unknown> | null;
+  id: number; filename: string; mimeType: string; summary: string | null;
+  uploadedAt: string; extractedData: Record<string, unknown> | null;
+  belongsToUser?: boolean | null; documentDate?: string | null;
 };
 
 function ConditionPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const selected: string[] = value ? value.split(",").map(s => s.trim()).filter(Boolean) : [];
   const toggle = (condition: string) => {
-    const next = selected.includes(condition)
-      ? selected.filter(c => c !== condition)
-      : [...selected, condition];
+    const next = selected.includes(condition) ? selected.filter(c => c !== condition) : [...selected, condition];
     onChange(next.join(", "));
   };
   return (
     <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 max-h-48 overflow-y-auto">
       {MEDICAL_CONDITIONS.map(c => (
-        <button
-          key={c}
-          type="button"
-          onClick={() => toggle(c)}
+        <button key={c} type="button" onClick={() => toggle(c)}
           className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
             selected.includes(c)
               ? "bg-teal-600 text-white border-teal-600"
               : "bg-white text-slate-600 border-slate-200 hover:border-teal-300 hover:text-teal-700"
           }`}
-        >
-          {c}
-        </button>
+        >{c}</button>
       ))}
     </div>
   );
@@ -103,12 +130,60 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
   );
 }
 
-function DocumentUploadPanel({ onExtracted }: { onExtracted: (data: Record<string, unknown>) => void }) {
+function OwnershipDialog({
+  open, onConfirm, onCancel, filename,
+}: { open: boolean; onConfirm: (isOwner: boolean) => void; onCancel: () => void; filename: string }) {
+  return (
+    <AlertDialog open={open}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-teal-600" />
+            Who does this document belong to?
+          </AlertDialogTitle>
+          <AlertDialogDescription className="space-y-2 pt-1">
+            <span className="font-medium text-slate-700 block">&quot;{filename}&quot;</span>
+            <span className="block">
+              If this is <strong>your</strong> document, VitalGuide will read it and intelligently update your health profile with any new information found — but only if the document is more recent than your last profile update.
+            </span>
+            <span className="block text-xs text-slate-400">
+              If it belongs to someone else, it will be saved for reference only and will not affect your profile.
+            </span>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+          <AlertDialogCancel onClick={onCancel} className="order-last sm:order-first">
+            Cancel
+          </AlertDialogCancel>
+          <button
+            onClick={() => onConfirm(false)}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          >
+            <UserX className="w-4 h-4" />
+            Someone else's
+          </button>
+          <AlertDialogAction
+            onClick={() => onConfirm(true)}
+            className="bg-teal-600 hover:bg-teal-700 text-white gap-2 inline-flex items-center"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            Yes, it's mine
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function DocumentUploadPanel({
+  onExtracted, onProfileUpdated,
+}: { onExtracted: (data: Record<string, unknown>) => void; onProfileUpdated: () => void }) {
   const [uploading, setUploading] = useState(false);
   const [documents, setDocuments] = useState<MedicalDocument[]>([]);
   const [loadedDocs, setLoadedDocs] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
   const [expandedDoc, setExpandedDoc] = useState<number | null>(null);
+  const [ownershipDialog, setOwnershipDialog] = useState<{ file: File; open: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -120,27 +195,61 @@ function DocumentUploadPanel({ onExtracted }: { onExtracted: (data: Record<strin
     } catch {}
   };
 
-  const handleUpload = async (file: File) => {
+  const handleFileSelected = (file: File) => {
+    setOwnershipDialog({ file, open: true });
+  };
+
+  const handleOwnershipConfirmed = async (isOwner: boolean) => {
+    const file = ownershipDialog?.file;
+    setOwnershipDialog(null);
+    if (!file) return;
+    await doUpload(file, isOwner);
+  };
+
+  const handleOwnershipCancel = () => {
+    setOwnershipDialog(null);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const doUpload = async (file: File, belongsToUser: boolean) => {
     setUploading(true);
     const form = new FormData();
     form.append("document", file);
+    form.append("belongsToUser", String(belongsToUser));
     try {
       const res = await fetch("/api/documents/upload", { method: "POST", credentials: "include", body: form });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Upload failed"); }
-      const doc: MedicalDocument = await res.json();
-      setDocuments(prev => [doc, ...prev]);
+      const doc: DocUploadResult = await res.json();
+      setDocuments(prev => [doc as MedicalDocument, ...prev]);
       setLoadedDocs(true);
       setShowDocs(true);
-      if (doc.extractedData && Object.keys(doc.extractedData).length > 0) {
+
+      if (!belongsToUser) {
+        toast({ title: "Document saved", description: "Saved for reference. Profile not updated (not your document)." });
+      } else if (doc.profileUpdated && doc.profileChanges && doc.profileChanges.length > 0) {
+        onProfileUpdated();
+        toast({
+          title: "Profile updated from document ✓",
+          description: `Updated: ${doc.profileChanges.map(c => c.replace(/([A-Z])/g, " $1")).join(", ")}`,
+        });
+        if (doc.extractedData) onExtracted(doc.extractedData);
+      } else if (doc.profileUpdateReason?.includes("older")) {
+        toast({
+          title: "Document saved — profile unchanged",
+          description: doc.profileUpdateReason,
+        });
+        if (doc.extractedData) onExtracted(doc.extractedData);
+      } else if (doc.extractedData && Object.keys(doc.extractedData).length > 0) {
+        toast({ title: "Document scanned", description: "Medical data extracted and saved." });
         onExtracted(doc.extractedData);
-        toast({ title: "Document scanned", description: "Medical data extracted and added to Additional Details." });
       } else {
-        toast({ title: "Document uploaded", description: "No data could be extracted. Check OpenAI API quota." });
+        toast({ title: "Document uploaded", description: "Saved. No data could be extracted." });
       }
     } catch (err: unknown) {
       toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
     } finally {
       setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
   };
 
@@ -155,13 +264,26 @@ function DocumentUploadPanel({ onExtracted }: { onExtracted: (data: Record<strin
 
   return (
     <div className="space-y-3">
+      {ownershipDialog && (
+        <OwnershipDialog
+          open={ownershipDialog.open}
+          filename={ownershipDialog.file.name}
+          onConfirm={handleOwnershipConfirmed}
+          onCancel={handleOwnershipCancel}
+        />
+      )}
+
       <div
         className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center cursor-pointer hover:border-teal-300 hover:bg-teal-50/30 transition-all"
         onDragOver={e => e.preventDefault()}
-        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleUpload(f); }}
+        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileSelected(f); }}
         onClick={() => fileRef.current?.click()}
       >
-        <input ref={fileRef} type="file" className="hidden" accept="image/jpeg,image/png,image/webp" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }} />
+        <input
+          ref={fileRef} type="file" className="hidden"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelected(f); }}
+        />
         {uploading ? (
           <div className="flex flex-col items-center gap-2">
             <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
@@ -176,11 +298,7 @@ function DocumentUploadPanel({ onExtracted }: { onExtracted: (data: Record<strin
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={loadDocuments}
-        className="flex items-center gap-1.5 text-xs font-medium text-teal-600 hover:text-teal-700"
-      >
+      <button type="button" onClick={loadDocuments} className="flex items-center gap-1.5 text-xs font-medium text-teal-600 hover:text-teal-700">
         <FileText className="w-3.5 h-3.5" />
         {showDocs ? "Hide" : "View"} uploaded documents ({loadedDocs ? documents.length : "..."})
         {showDocs ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -195,6 +313,12 @@ function DocumentUploadPanel({ onExtracted }: { onExtracted: (data: Record<strin
                 <div className="flex items-center gap-2 min-w-0">
                   <FileText className="w-4 h-4 text-teal-500 shrink-0" />
                   <span className="text-sm font-medium text-slate-800 truncate">{doc.filename}</span>
+                  {doc.belongsToUser === true && (
+                    <Badge className="bg-teal-50 text-teal-700 border-teal-200 text-xs shrink-0">Mine</Badge>
+                  )}
+                  {doc.belongsToUser === false && (
+                    <Badge variant="secondary" className="text-xs shrink-0">Other</Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button type="button" onClick={() => setExpandedDoc(expandedDoc === doc.id ? null : doc.id)} className="p-1 text-slate-400 hover:text-slate-700">
@@ -206,12 +330,13 @@ function DocumentUploadPanel({ onExtracted }: { onExtracted: (data: Record<strin
                 </div>
               </div>
               {doc.summary && <p className="text-xs text-slate-500">{doc.summary}</p>}
+              {doc.documentDate && <p className="text-xs text-slate-400">Document date: {doc.documentDate}</p>}
               {expandedDoc === doc.id && doc.extractedData && (
                 <div className="mt-2 bg-slate-50 rounded-lg p-3 text-xs text-slate-700 space-y-1">
                   {Object.entries(doc.extractedData).filter(([k]) => k !== "summary").map(([k, v]) => (
                     <div key={k} className="flex gap-2">
-                      <span className="font-medium text-slate-500 capitalize min-w-24">{k.replace(/([A-Z])/g, " $1")}:</span>
-                      <span>{Array.isArray(v) ? (v as unknown[]).join(", ") : typeof v === "object" ? JSON.stringify(v) : String(v)}</span>
+                      <span className="font-medium text-slate-500 capitalize min-w-28">{formatKey(k)}:</span>
+                      <span>{formatValue(v)}</span>
                     </div>
                   ))}
                 </div>
@@ -230,13 +355,12 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
-  const [additionalDetails, setAdditionalDetails] = useState<Record<string, unknown> | null>(null);
+  const [localAdditional, setLocalAdditional] = useState<Record<string, unknown> | null>(null);
 
   const form = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
     values: profile ? {
-      name: profile.name,
-      age: profile.age,
+      name: profile.name, age: profile.age,
       gender: profile.gender ?? "",
       bloodGroup: profile.bloodGroup ?? "",
       weight: profile.weight ?? undefined,
@@ -252,36 +376,45 @@ export default function ProfilePage() {
   });
 
   const onSubmit = (data: ProfileForm) => {
-    const addlStr = additionalDetails ? JSON.stringify(additionalDetails) : (profile?.additionalDetails ?? undefined);
+    const addlStr = localAdditional
+      ? JSON.stringify(localAdditional)
+      : (profile?.additionalDetails ?? undefined);
     upsertProfile.mutate(
       { data: { ...data, age: Number(data.age), additionalDetails: addlStr } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
           setEditing(false);
+          setLocalAdditional(null);
           toast({ title: "Profile updated", description: "Your health profile has been saved." });
         },
-        onError: () => {
-          toast({ title: "Error saving profile", description: "Please try again.", variant: "destructive" });
-        },
+        onError: () => toast({ title: "Error saving profile", description: "Please try again.", variant: "destructive" }),
       }
     );
   };
 
-  const handleDocExtracted = (data: Record<string, unknown>) => {
-    setAdditionalDetails(data);
+  const handleDocExtracted = (data: Record<string, unknown>) => setLocalAdditional(data);
+
+  const handleProfileUpdated = () => {
+    queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
   };
 
   const parsedAdditional: Record<string, unknown> | null = (() => {
-    if (additionalDetails) return additionalDetails;
+    if (localAdditional) return localAdditional;
     if (profile?.additionalDetails) {
       try { return JSON.parse(profile.additionalDetails); } catch { return null; }
     }
     return null;
   })();
 
-  const conditions = profile?.medicalConditions?.split(",").map(s => s.trim()).filter(Boolean) ?? [];
+  const vitalsEntries = parsedAdditional
+    ? Object.entries(parsedAdditional).filter(([k, v]) => k !== "summary" && isVitalsKey(k) && v)
+    : [];
+  const otherEntries = parsedAdditional
+    ? Object.entries(parsedAdditional).filter(([k, v]) => k !== "summary" && !isVitalsKey(k) && v)
+    : [];
 
+  const conditions = profile?.medicalConditions?.split(",").map(s => s.trim()).filter(Boolean) ?? [];
   const activityLabels: Record<string, string> = {
     sedentary: "Sedentary", light: "Lightly Active", moderate: "Moderately Active",
     active: "Active", very_active: "Very Active",
@@ -315,7 +448,7 @@ export default function ProfilePage() {
             <Pencil className="w-4 h-4" />Edit Profile
           </Button>
         ) : (
-          <Button variant="ghost" size="sm" onClick={() => { setEditing(false); form.reset(); }} className="gap-2 text-slate-500">
+          <Button variant="ghost" size="sm" onClick={() => { setEditing(false); form.reset(); setLocalAdditional(null); }} className="gap-2 text-slate-500">
             <X className="w-4 h-4" />Cancel
           </Button>
         )}
@@ -324,7 +457,6 @@ export default function ProfilePage() {
       {editing ? (
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            {/* Basic Info */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><User className="w-4 h-4 text-teal-600" />Basic Information</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -361,7 +493,6 @@ export default function ProfilePage() {
               </CardContent>
             </Card>
 
-            {/* Physical Stats */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Heart className="w-4 h-4 text-teal-600" />Physical Stats</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 gap-4">
@@ -374,7 +505,6 @@ export default function ProfilePage() {
               </CardContent>
             </Card>
 
-            {/* Medical Details */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2"><Pill className="w-4 h-4 text-teal-600" />Medical Details</CardTitle>
@@ -397,7 +527,6 @@ export default function ProfilePage() {
               </CardContent>
             </Card>
 
-            {/* Lifestyle */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Dumbbell className="w-4 h-4 text-teal-600" />Lifestyle & Goals</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -425,19 +554,18 @@ export default function ProfilePage() {
               </CardContent>
             </Card>
 
-            {/* Document Upload */}
             <Card className="border-slate-200 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2"><Upload className="w-4 h-4 text-teal-600" />Medical Documents</CardTitle>
-                <CardDescription className="text-xs">Upload lab reports, prescriptions, or health records. AI will scan and extract data automatically.</CardDescription>
+                <CardDescription className="text-xs">Upload lab reports, prescriptions, or health records. AI will scan, confirm ownership, and update your profile if the document is recent.</CardDescription>
               </CardHeader>
               <CardContent>
-                <DocumentUploadPanel onExtracted={handleDocExtracted} />
+                <DocumentUploadPanel onExtracted={handleDocExtracted} onProfileUpdated={handleProfileUpdated} />
               </CardContent>
             </Card>
 
             <div className="flex justify-end gap-3 pb-6">
-              <Button type="button" variant="outline" onClick={() => { setEditing(false); form.reset(); }}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => { setEditing(false); form.reset(); setLocalAdditional(null); }}>Cancel</Button>
               <Button type="submit" disabled={upsertProfile.isPending} className="bg-teal-600 hover:bg-teal-700 text-white gap-2">
                 <Save className="w-4 h-4" />
                 {upsertProfile.isPending ? "Saving..." : "Save Changes"}
@@ -449,7 +577,6 @@ export default function ProfilePage() {
         <div className="space-y-4">
           <Card className="border-slate-200 shadow-sm">
             <CardContent className="pt-6 space-y-6">
-              {/* Basic Info */}
               <div>
                 <SectionHeader icon={<User className="w-4 h-4" />} title="Basic Information" />
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -461,7 +588,6 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* Physical */}
               <div>
                 <SectionHeader icon={<Heart className="w-4 h-4" />} title="Physical Stats" />
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -473,7 +599,6 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* Medical */}
               <div>
                 <SectionHeader icon={<Pill className="w-4 h-4" />} title="Medical Details" />
                 {conditions.length > 0 && (
@@ -490,7 +615,6 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* Lifestyle */}
               <div>
                 <SectionHeader icon={<Dumbbell className="w-4 h-4" />} title="Lifestyle & Goals" />
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -502,52 +626,59 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Additional Details from Documents */}
-          {parsedAdditional && Object.keys(parsedAdditional).length > 0 && (
-            <Card className="border-teal-200 shadow-sm bg-teal-50/30">
+          {/* Health Vitals from documents/checkups */}
+          {vitalsEntries.length > 0 && (
+            <Card className="border-teal-200 shadow-sm bg-gradient-to-br from-teal-50/60 to-white">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2 text-teal-800">
-                  <FileText className="w-4 h-4 text-teal-600" />Additional Details from Medical Documents
+                  <Activity className="w-4 h-4 text-teal-600" />Health Vitals
                 </CardTitle>
-                <CardDescription className="text-xs text-teal-700">Data extracted automatically from your uploaded reports</CardDescription>
+                <CardDescription className="text-xs text-teal-600">Recorded from medical documents and checkups</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {Object.entries(parsedAdditional).filter(([k]) => k !== "summary").map(([key, val]) => {
-                    const displayVal = Array.isArray(val)
-                      ? (val as unknown[]).map(v => typeof v === "object" ? JSON.stringify(v) : String(v)).join(", ")
-                      : typeof val === "object"
-                      ? JSON.stringify(val)
-                      : String(val);
-                    if (!displayVal) return null;
-                    return (
-                      <div key={key}>
-                        <p className="text-xs font-medium text-teal-600 uppercase tracking-wide mb-0.5 capitalize">
-                          {key.replace(/([A-Z])/g, " $1")}
-                        </p>
-                        <p className="text-sm text-slate-800">{displayVal}</p>
-                      </div>
-                    );
-                  })}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {vitalsEntries.map(([key, val]) => (
+                    <div key={key} className="bg-white rounded-lg border border-teal-100 px-3 py-2.5 shadow-xs">
+                      <p className="text-xs font-medium text-teal-500 uppercase tracking-wide mb-0.5">{formatKey(key)}</p>
+                      <p className="text-sm font-semibold text-slate-800">{formatValue(val)}</p>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Document Upload (view mode) */}
+          {/* Personalized Health Data */}
+          {otherEntries.length > 0 && (
+            <Card className="border-indigo-100 shadow-sm bg-indigo-50/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2 text-indigo-800">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />Personalized Health Data
+                </CardTitle>
+                <CardDescription className="text-xs text-indigo-600">Additional details recorded from your documents and health history</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {otherEntries.map(([key, val]) => (
+                    <div key={key} className="bg-white rounded-lg border border-indigo-100 px-3 py-2.5">
+                      <p className="text-xs font-medium text-indigo-400 uppercase tracking-wide mb-0.5">{formatKey(key)}</p>
+                      <p className="text-sm text-slate-800">{formatValue(val)}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="border-slate-200 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2"><Upload className="w-4 h-4 text-teal-600" />Medical Documents</CardTitle>
-              <CardDescription className="text-xs">Upload lab reports or health records — AI extracts the data automatically</CardDescription>
+              <CardDescription className="text-xs">Upload lab reports, prescriptions, or health records. Confirm ownership and AI will update your profile intelligently.</CardDescription>
             </CardHeader>
             <CardContent>
-              <DocumentUploadPanel onExtracted={handleDocExtracted} />
+              <DocumentUploadPanel onExtracted={handleDocExtracted} onProfileUpdated={handleProfileUpdated} />
             </CardContent>
           </Card>
-
-          <p className="text-xs text-center text-slate-400 pb-4">
-            This information is used to personalize your AI health guidance. Only you can see it.
-          </p>
         </div>
       )}
     </div>
