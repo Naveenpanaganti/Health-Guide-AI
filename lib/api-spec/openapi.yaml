@@ -1,22 +1,31 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: VitalGuide Health AI API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: users
+    description: User profile operations
+  - name: plans
+    description: Health plan tracking
+  - name: logs
+    description: Daily health logs
+  - name: chat
+    description: AI chat conversations
+  - name: openai
+    description: OpenAI AI operations
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +33,317 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /users/profile:
+    get:
+      operationId: getProfile
+      tags: [users]
+      summary: Get user profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "404":
+          description: Not found
+    post:
+      operationId: upsertProfile
+      tags: [users]
+      summary: Create or update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileInput"
+      responses:
+        "200":
+          description: Profile saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /plans:
+    get:
+      operationId: listPlans
+      tags: [plans]
+      summary: List user's health plans
+      responses:
+        "200":
+          description: Plans list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plan"
+    post:
+      operationId: createPlan
+      tags: [plans]
+      summary: Create a new health plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanInput"
+      responses:
+        "201":
+          description: Plan created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+
+  /plans/{id}:
+    get:
+      operationId: getPlan
+      tags: [plans]
+      summary: Get a specific plan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+    patch:
+      operationId: updatePlan
+      tags: [plans]
+      summary: Update a plan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanUpdate"
+      responses:
+        "200":
+          description: Updated plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+    delete:
+      operationId: deletePlan
+      tags: [plans]
+      summary: Delete a plan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /logs:
+    get:
+      operationId: listLogs
+      tags: [logs]
+      summary: Get daily health logs (last 7 days)
+      responses:
+        "200":
+          description: Logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailyLog"
+    post:
+      operationId: createLog
+      tags: [logs]
+      summary: Create a daily health log entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DailyLogInput"
+      responses:
+        "201":
+          description: Log created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyLog"
+
+  /logs/today:
+    get:
+      operationId: getTodayLog
+      tags: [logs]
+      summary: Get today's log entry
+      responses:
+        "200":
+          description: Today's log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyLog"
+        "404":
+          description: No log for today
+
+  /chat/conversations:
+    get:
+      operationId: listConversations
+      tags: [chat]
+      summary: List AI conversations
+      responses:
+        "200":
+          description: Conversations list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+    post:
+      operationId: createConversation
+      tags: [chat]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationInput"
+      responses:
+        "201":
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+
+  /chat/conversations/{id}/messages:
+    get:
+      operationId: getConversationMessages
+      tags: [chat]
+      summary: Get messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+    post:
+      operationId: sendMessage
+      tags: [chat]
+      summary: Send a message and get AI response (streaming)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "200":
+          description: AI response stream (text/event-stream)
+
+  /openai/conversations:
+    get:
+      operationId: listOpenaiConversations
+      tags: [openai]
+      summary: List OpenAI conversations
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenaiConversation"
+    post:
+      operationId: createOpenaiConversation
+      tags: [openai]
+      summary: Create a new OpenAI conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenaiConversationInput"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiConversation"
+
+  /openai/conversations/{id}/messages:
+    get:
+      operationId: getOpenaiConversationMessages
+      tags: [openai]
+      summary: Get messages for an OpenAI conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenaiMessage"
+    post:
+      operationId: sendOpenaiMessage
+      tags: [openai]
+      summary: Send a message to an OpenAI conversation (streaming)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendOpenaiMessageInput"
+      responses:
+        "200":
+          description: Streaming text/event-stream response
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +351,237 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    UserProfile:
+      type: object
+      required: [id, clerkUserId, name, age]
+      properties:
+        id:
+          type: integer
+        clerkUserId:
+          type: string
+        name:
+          type: string
+        age:
+          type: integer
+        gender:
+          type: ["string", "null"]
+        weight:
+          type: ["number", "null"]
+        height:
+          type: ["number", "null"]
+        medicalConditions:
+          type: ["string", "null"]
+        medications:
+          type: ["string", "null"]
+        allergies:
+          type: ["string", "null"]
+        sleepHours:
+          type: ["number", "null"]
+        activityLevel:
+          type: ["string", "null"]
+        goals:
+          type: ["string", "null"]
+        location:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    UserProfileInput:
+      type: object
+      required: [name, age]
+      properties:
+        name:
+          type: string
+        age:
+          type: integer
+        gender:
+          type: string
+        weight:
+          type: number
+        height:
+          type: number
+        medicalConditions:
+          type: string
+        medications:
+          type: string
+        allergies:
+          type: string
+        sleepHours:
+          type: number
+        activityLevel:
+          type: string
+        goals:
+          type: string
+        location:
+          type: string
+
+    Plan:
+      type: object
+      required: [id, title, type, status, createdAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        type:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    PlanInput:
+      type: object
+      required: [title, type]
+      properties:
+        title:
+          type: string
+        type:
+          type: string
+        description:
+          type: string
+
+    PlanUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        status:
+          type: string
+        description:
+          type: string
+
+    DailyLog:
+      type: object
+      required: [id, logDate, createdAt]
+      properties:
+        id:
+          type: integer
+        planId:
+          type: ["integer", "null"]
+        logDate:
+          type: string
+        mood:
+          type: ["string", "null"]
+        sleepHours:
+          type: ["number", "null"]
+        waterIntake:
+          type: ["number", "null"]
+        foodLog:
+          type: ["string", "null"]
+        symptomsLog:
+          type: ["string", "null"]
+        medicationTaken:
+          type: ["boolean", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    DailyLogInput:
+      type: object
+      properties:
+        planId:
+          type: integer
+        logDate:
+          type: string
+        mood:
+          type: string
+        sleepHours:
+          type: number
+        waterIntake:
+          type: number
+        foodLog:
+          type: string
+        symptomsLog:
+          type: string
+        medicationTaken:
+          type: boolean
+        notes:
+          type: string
+
+    Conversation:
+      type: object
+      required: [id, mode, title, createdAt]
+      properties:
+        id:
+          type: integer
+        mode:
+          type: string
+        title:
+          type: string
+        createdAt:
+          type: string
+
+    ConversationInput:
+      type: object
+      required: [mode, title]
+      properties:
+        mode:
+          type: string
+        title:
+          type: string
+
+    Message:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+
+    MessageInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    OpenaiConversation:
+      type: object
+      required: [id, title, createdAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+
+    OpenaiConversationInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+
+    OpenaiMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+
+    SendOpenaiMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
