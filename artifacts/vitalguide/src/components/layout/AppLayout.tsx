@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useClerk } from "@clerk/react";
-import { HeartPulse, LayoutDashboard, Stethoscope, CalendarHeart, BookOpen, LogOut } from "lucide-react";
+import { HeartPulse, LayoutDashboard, Stethoscope, CalendarHeart, BookOpen, LogOut, UserCircle } from "lucide-react";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -12,6 +12,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { name: "Health Checkup", path: "/checkup", icon: <Stethoscope className="w-5 h-5" /> },
     { name: "Plan Tracker", path: "/planner", icon: <CalendarHeart className="w-5 h-5" /> },
     { name: "Health Education", path: "/educate", icon: <BookOpen className="w-5 h-5" /> },
+    { name: "My Profile", path: "/profile", icon: <UserCircle className="w-5 h-5" /> },
   ];
 
   return (
