@@ -12,9 +12,15 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 let _ai: GoogleGenAI | null = null;
 function getAI(): GoogleGenAI {
   if (!_ai) {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY;
+    const integrationApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+    const integrationBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+    const apiKey = integrationApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     if (!apiKey) throw new Error("No Gemini API key configured.");
-    _ai = new GoogleGenAI({ apiKey });
+    if (integrationApiKey && integrationBaseUrl) {
+      _ai = new GoogleGenAI({ apiKey: integrationApiKey, httpOptions: { apiVersion: "", baseUrl: integrationBaseUrl } });
+    } else {
+      _ai = new GoogleGenAI({ apiKey });
+    }
   }
   return _ai;
 }
