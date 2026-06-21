@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { isAuthenticated } from "../auth/replitAuth";
+import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { userProfilesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -8,8 +8,8 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-router.get("/profile", isAuthenticated, async (req: any, res) => {
-  const userId = req.user?.claims?.sub;
+router.get("/profile", async (req, res) => {
+  const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   try {
@@ -22,8 +22,8 @@ router.get("/profile", isAuthenticated, async (req: any, res) => {
   }
 });
 
-router.post("/profile", isAuthenticated, async (req: any, res) => {
-  const userId = req.user?.claims?.sub;
+router.post("/profile", async (req, res) => {
+  const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const parsed = UpsertProfileBody.safeParse(req.body);

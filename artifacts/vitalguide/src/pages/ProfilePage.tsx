@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { useUser } from "@clerk/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -505,7 +505,7 @@ function DocumentUploadPanel({
 
 export default function ProfilePage() {
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user } = useUser();
   const { data: profile, isLoading } = useGetProfile({ query: { queryKey: getGetProfileQueryKey() } });
   const upsertProfile = useUpsertProfile();
   const queryClient = useQueryClient();

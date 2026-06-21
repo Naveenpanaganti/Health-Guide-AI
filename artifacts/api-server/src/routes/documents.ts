@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { isAuthenticated } from "../auth/replitAuth";
+import { getAuth } from "@clerk/express";
 import multer from "multer";
 import { GoogleGenAI } from "@google/genai";
 import { db, medicalDocumentsTable, userProfilesTable } from "@workspace/db";
@@ -12,15 +12,9 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 let _ai: GoogleGenAI | null = null;
 function getAI(): GoogleGenAI {
   if (!_ai) {
-    const integrationApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-    const integrationBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-    const apiKey = integrationApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("No Gemini API key configured.");
-    if (integrationApiKey && integrationBaseUrl) {
-      _ai = new GoogleGenAI({ apiKey: integrationApiKey, httpOptions: { apiVersion: "", baseUrl: integrationBaseUrl } });
-    } else {
-      _ai = new GoogleGenAI({ apiKey });
-    }
+    _ai = new GoogleGenAI({ apiKey });
   }
   return _ai;
 }
@@ -148,8 +142,8 @@ async function applyDocumentToProfile(
   }
 }
 
-router.post("/upload", upload.single("document"), isAuthenticated, async (req: any, res): Promise<void> => {
-  const userId = (req as any).user?.claims?.sub;
+router.post("/upload", upload.single("document"), async (req, res): Promise<void> => {
+  const { userId } = getAuth(req);
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
 
@@ -230,8 +224,8 @@ router.post("/upload", upload.single("document"), isAuthenticated, async (req: a
   }
 });
 
-router.get("/", isAuthenticated, async (req: any, res) => {
-  const userId = (req as any).user?.claims?.sub;
+router.get("/", async (req, res) => {
+  const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const docs = await db.select().from(medicalDocumentsTable)
@@ -247,8 +241,8 @@ router.get("/", isAuthenticated, async (req: any, res) => {
   }
 });
 
-router.delete("/:id", isAuthenticated, async (req: any, res) => {
-  const userId = (req as any).user?.claims?.sub;
+router.delete("/:id", async (req, res) => {
+  const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const id = Number(req.params.id);
   try {

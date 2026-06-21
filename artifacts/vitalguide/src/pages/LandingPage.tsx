@@ -11,11 +11,11 @@ export default function LandingPage() {
           VitalGuide
         </div>
         <nav className="flex items-center gap-4">
-          <a href="/api/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
+          <Link href="/sign-in" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
             Sign In
-          </a>
+          </Link>
           <Button asChild className="bg-teal-600 hover:bg-teal-700 text-white shadow-sm" data-testid="button-get-started-header">
-            <a href="/api/login">Get Started</a>
+            <Link href="/sign-up">Get Started</Link>
           </Button>
         </nav>
       </header>
@@ -33,9 +33,9 @@ export default function LandingPage() {
           </p>
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <Button size="lg" asChild className="bg-teal-600 hover:bg-teal-700 text-white rounded-full px-8 shadow-md" data-testid="button-get-started-hero">
-              <a href="/api/login">
+              <Link href="/sign-up">
                 Start Your Journey <ArrowRight className="ml-2 w-4 h-4" />
-              </a>
+              </Link>
             </Button>
           </div>
         </section>

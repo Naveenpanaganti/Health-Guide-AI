@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { isAuthenticated } from "../auth/replitAuth";
+import { getAuth } from "@clerk/express";
 import { db, conversations, messages, userProfilesTable, medicalDocumentsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { CreateConversationBody, SendMessageBody, GetConversationMessagesParams } from "@workspace/api-zod";
@@ -59,8 +59,8 @@ Rules:
 - Offer to explain more if they want deeper detail`,
 };
 
-router.delete("/conversations/:id", isAuthenticated, async (req: any, res) => {
-  const userId = (req as any).user?.claims?.sub;
+router.delete("/conversations/:id", async (req, res) => {
+  const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -74,8 +74,8 @@ router.delete("/conversations/:id", isAuthenticated, async (req: any, res) => {
   }
 });
 
-router.get("/conversations", isAuthenticated, async (req: any, res) => {
-  const userId = (req as any).user?.claims?.sub;
+router.get("/conversations", async (req, res) => {
+  const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const convos = await db.select().from(conversations).where(eq(conversations.clerkUserId, userId));
@@ -86,8 +86,8 @@ router.get("/conversations", isAuthenticated, async (req: any, res) => {
   }
 });
 
-router.post("/conversations", isAuthenticated, async (req: any, res) => {
-  const userId = (req as any).user?.claims?.sub;
+router.post("/conversations", async (req, res) => {
+  const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const parsed = CreateConversationBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
@@ -100,8 +100,8 @@ router.post("/conversations", isAuthenticated, async (req: any, res) => {
   }
 });
 
-router.get("/conversations/:id/messages", isAuthenticated, async (req: any, res) => {
-  const userId = (req as any).user?.claims?.sub;
+router.get("/conversations/:id/messages", async (req, res) => {
+  const { userId } = getAuth(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const params = GetConversationMessagesParams.safeParse({ id: Number(req.params.id) });
   if (!params.success) return res.status(400).json({ error: "Invalid id" });
@@ -114,8 +114,8 @@ router.get("/conversations/:id/messages", isAuthenticated, async (req: any, res)
   }
 });
 
-router.post("/conversations/:id/messages", isAuthenticated, async (req: any, res): Promise<void> => {
-  const userId = (req as any).user?.claims?.sub;
+router.post("/conversations/:id/messages", async (req, res): Promise<void> => {
+  const { userId } = getAuth(req);
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const params = GetConversationMessagesParams.safeParse({ id: Number(req.params.id) });
   if (!params.success) { res.status(400).json({ error: "Invalid id" }); return; }

@@ -1,11 +1,12 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { useClerk, useUser } from "@clerk/react";
 import { HeartPulse, LayoutDashboard, Stethoscope, CalendarHeart, BookOpen, LogOut, UserCircle } from "lucide-react";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user } = useAuth();
+  const { signOut } = useClerk();
+  const { user } = useUser();
 
   const navItems = [
     { name: "Dashboard", path: "/dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
@@ -25,9 +26,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const initials = user?.firstName
     ? `${user.firstName[0]}${user.lastName?.[0] ?? ""}`.toUpperCase()
     : "U";
-  const displayName = user?.firstName
-    ? `${user.firstName}${user.lastName ? " " + user.lastName : ""}`
-    : "My Account";
+  const displayName = user?.fullName ?? user?.firstName ?? "My Account";
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
@@ -42,8 +41,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         <Link href="/profile" className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 bg-teal-50/50 hover:bg-teal-50 transition-colors group">
           <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm">
-            {user?.profileImageUrl ? (
-              <img src={user.profileImageUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
+            {user?.imageUrl ? (
+              <img src={user.imageUrl} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
             ) : (
               initials
             )}
@@ -74,13 +73,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="p-4 border-t border-slate-100">
-          <a
-            href="/api/logout"
+          <button
+            type="button"
+            onClick={() => signOut({ redirectUrl: "/" })}
             className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
           >
             <LogOut className="w-5 h-5" />
             Sign Out
-          </a>
+          </button>
         </div>
       </aside>
 
@@ -94,8 +94,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
           <Link href="/profile" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-teal-600 flex items-center justify-center text-white font-bold text-xs overflow-hidden">
-              {user?.profileImageUrl ? (
-                <img src={user.profileImageUrl} alt={displayName} className="w-8 h-8 rounded-full object-cover" />
+              {user?.imageUrl ? (
+                <img src={user.imageUrl} alt={displayName} className="w-8 h-8 rounded-full object-cover" />
               ) : (
                 initials
               )}
